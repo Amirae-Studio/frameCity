@@ -1,0 +1,80 @@
+"use client";
+
+import Image from "next/image";
+import { motion } from "framer-motion";
+import { filmStages } from "@/lib/data";
+import { Reveal } from "./Reveal";
+
+export function Film() {
+  return (
+    <section id="film" className="border-t border-cream/[0.09] px-6 py-[80px] md:px-[52px] md:py-[100px]">
+      <div className="mx-auto mb-[46px] max-w-[640px] text-center">
+        <Reveal>
+          <div
+            className="mb-[18px] font-mono text-[11px] font-bold uppercase tracking-[0.3em]"
+            style={{ color: "var(--accent)" }}
+          >
+            Inside the studio
+          </div>
+          <h2 className="m-0 mb-4 font-display text-[34px] font-normal leading-[1.03] md:text-[48px]">
+            Every city is planned, modelled and tested — one part at a time.
+          </h2>
+          <p className="m-0 text-[15px] leading-[1.7] text-cream/[0.62]">
+            Watch how a skyline goes from a blank sheet to a print-ready model:
+            districts planned, buildings modelled by hand, then each part
+            test-printed until it holds.
+          </p>
+        </Reveal>
+      </div>
+
+      <Reveal
+        as="div"
+        className="on-media relative mx-auto aspect-video max-w-[1080px] overflow-hidden rounded-xl border border-cream/[0.12] bg-[#0b0a09]"
+      >
+        <Image
+          src="/london-table.jpg"
+          alt="FrameCity studio process film"
+          fill
+          sizes="(max-width: 1080px) 100vw, 1080px"
+          className="object-cover opacity-50"
+        />
+        <div className="absolute inset-0 bg-[radial-gradient(60%_60%_at_50%_50%,rgba(11,10,9,0.25),rgba(11,10,9,0.72))]" />
+
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-[22px]">
+          <motion.button
+            whileHover={{ scale: 1.08 }}
+            whileTap={{ scale: 0.96 }}
+            aria-label="Play the film"
+            className="flex h-[78px] w-[78px] items-center justify-center rounded-full border border-cream/50 bg-cream/10 backdrop-blur-[6px]"
+          >
+            <span className="ml-[5px] inline-block h-0 w-0 border-b-[11px] border-l-[16px] border-t-[11px] border-b-transparent border-l-cream border-t-transparent" />
+          </motion.button>
+          <span className="font-mono text-[11px] font-bold uppercase tracking-[0.26em] text-cream/80">
+            Play the film · 2:14
+          </span>
+        </div>
+
+        <div className="absolute inset-x-0 bottom-0 flex border-t border-cream/[0.14] bg-[rgba(11,10,9,0.55)] backdrop-blur-[6px]">
+          {filmStages.map((s, i) => (
+            <div
+              key={s.no}
+              className={`flex-1 px-[22px] py-[18px] ${
+                i < filmStages.length - 1 ? "border-r border-cream/[0.12]" : ""
+              }`}
+            >
+              <span
+                className="font-mono text-[10px] font-bold uppercase tracking-[0.2em]"
+                style={{ color: "var(--accent)" }}
+              >
+                {s.no} · {s.label}
+              </span>
+              <div className="mt-[6px] text-[11px] text-cream/[0.72] md:text-[13px]">
+                {s.body}
+              </div>
+            </div>
+          ))}
+        </div>
+      </Reveal>
+    </section>
+  );
+}
