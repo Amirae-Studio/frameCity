@@ -8,10 +8,10 @@ import { Reveal } from "./Reveal";
 const cityChips = ["London", "Paris", "New York", "Tokyo"];
 
 type Format = { name: string; size: string; price: number };
-const formats: Format[] = [
-  { name: "Table Edition", size: "220 × 220 mm", price: 240 },
-  { name: "Wall Edition", size: "300 × 300 mm", price: 300 },
-];
+// const formats: Format[] = [
+//   { name: "Table Edition", size: "220 × 220 mm", price: 240 },
+//   { name: "Wall Edition", size: "300 × 300 mm", price: 300 },
+// ];
 
 // Rough lat/long anchor for the pin readout (London · The City).
 const BASE_LAT = 51.5155;
@@ -19,11 +19,12 @@ const BASE_LNG = -0.0922;
 
 export function Configurator() {
   const [city, setCity] = useState("London");
-  const [format, setFormat] = useState(0);
   const [coords, setCoords] = useState({ lat: BASE_LAT, lng: BASE_LNG });
+  const [wallSize, setWallSize] = useState(100);
+  const [treesSize, setTreesSize] = useState(100);
+  const [showPeople, setShowPeople] = useState(true);
+  const [showRoads, setShowRoads] = useState(true);
   const mapRef = useRef<HTMLDivElement>(null);
-
-  const active = formats[format];
 
   function handleDrag() {
     // Translate the pin offset into a plausible coordinate readout.
@@ -57,8 +58,7 @@ export function Configurator() {
             Browse, drop a pin, print &amp; frame.
           </h2>
           <p className="m-0 text-[15px] leading-[1.7] text-cream/[0.62]">
-            Pick any city in the library, frame the exact block you love, choose
-            a format — and we print and hand-frame it to order.
+            Pick any city in the library, frame the exact block you love, confiure to your vision.
           </p>
         </Reveal>
       </div>
@@ -129,33 +129,105 @@ export function Configurator() {
 
           {/* Step 3 */}
           <div>
-            <StepHead no="03" label="Choose a format" />
-            <div className="grid grid-cols-2 gap-[10px]">
-              {formats.map((f, i) => {
-                const on = i === format;
-                return (
+            <StepHead no="03" label="Configure to your vision" />
+            <div className="flex flex-col gap-4">
+              <div>
+                <div className="mb-2 flex items-center justify-between">
+                  <span className="text-[12.5px] text-cream/75">Building size</span>
+                  <span className="font-mono text-[11px] text-cream/50">
+                    {wallSize}%
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="50"
+                  max="150"
+                  value={wallSize}
+                  onChange={(e) => setWallSize(Number(e.target.value))}
+                  className="fc-range"
+                  style={{ "--p": `${wallSize - 50}%` } as React.CSSProperties}
+                />
+              </div>
+
+              <div>
+                <div className="mb-2 flex items-center justify-between">
+                  <span className="text-[12.5px] text-cream/75">Trees size</span>
+                  <span className="font-mono text-[11px] text-cream/50">
+                    {treesSize}%
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="50"
+                  max="150"
+                  value={treesSize}
+                  onChange={(e) => setTreesSize(Number(e.target.value))}
+                  className="fc-range"
+                  style={{ "--p": `${treesSize - 50}%` } as React.CSSProperties}
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Step 4 */}
+          <div>
+            <StepHead no="04" label="Visibility options" />
+            <div className="flex flex-col gap-4">
+              <div className="flex items-center justify-between">
+                <span className="text-[12.5px] text-cream/75">Show people</span>
+                <div className="flex rounded-full border border-cream/[0.14] p-0.5 bg-deep/40">
                   <button
-                    key={f.name}
-                    onClick={() => setFormat(i)}
-                    className="rounded-[10px] p-4 text-left transition-colors duration-200"
-                    style={{
-                      border: on
-                        ? "1.5px solid var(--accent)"
-                        : "1px solid rgba(var(--ink-rgb), 0.16)",
-                      background: on
-                        ? "rgba(var(--accent-rgb), 0.06)"
-                        : "transparent",
-                    }}
+                    type="button"
+                    onClick={() => setShowPeople(true)}
+                    className={`rounded-full px-3.5 py-1 text-[11px] font-mono transition-colors duration-200 ${
+                      showPeople
+                        ? "bg-cream text-[var(--color-base)] font-bold"
+                        : "text-cream/60 hover:text-cream"
+                    }`}
                   >
-                    <div className="font-display text-[16px] font-medium">
-                      {f.name}
-                    </div>
-                    <div className="mt-1 font-mono text-[12px] text-cream/55">
-                      {f.size}
-                    </div>
+                    ON
                   </button>
-                );
-              })}
+                  <button
+                    type="button"
+                    onClick={() => setShowPeople(false)}
+                    className={`rounded-full px-3.5 py-1 text-[11px] font-mono transition-colors duration-200 ${
+                      !showPeople
+                        ? "bg-cream text-[var(--color-base)] font-bold"
+                        : "text-cream/60 hover:text-cream"
+                    }`}
+                  >
+                    OFF
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <span className="text-[12.5px] text-cream/75">Show roads</span>
+                <div className="flex rounded-full border border-cream/[0.14] p-0.5 bg-deep/40">
+                  <button
+                    type="button"
+                    onClick={() => setShowRoads(true)}
+                    className={`rounded-full px-3.5 py-1 text-[11px] font-mono transition-colors duration-200 ${
+                      showRoads
+                        ? "bg-cream text-[var(--color-base)] font-bold"
+                        : "text-cream/60 hover:text-cream"
+                    }`}
+                  >
+                    ON
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowRoads(false)}
+                    className={`rounded-full px-3.5 py-1 text-[11px] font-mono transition-colors duration-200 ${
+                      !showRoads
+                        ? "bg-cream text-[var(--color-base)] font-bold"
+                        : "text-cream/60 hover:text-cream"
+                    }`}
+                  >
+                    OFF
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -163,7 +235,7 @@ export function Configurator() {
             href="/studio"
             className="group mt-[2px] flex items-center justify-center gap-[10px] rounded-full bg-cream p-4 text-[14.5px] text-[var(--color-base)] no-underline transition-transform duration-300 hover:scale-[1.02]"
           >
-            Print &amp; frame — from ${active.price}
+            Print &amp; frame 
             <span className="inline-block h-[6px] w-[6px] rotate-45 border-r-[1.5px] border-t-[1.5px] border-[var(--color-base)] transition-transform duration-300 group-hover:translate-x-0.5" />
           </a>
         </div>
@@ -187,7 +259,13 @@ export function Configurator() {
             </span>
           </div>
           <div className="absolute bottom-4 left-4 font-display text-[22px] font-medium text-cream [text-shadow:0_2px_12px_rgba(0,0,0,0.6)]">
-            {city} · The City · {active.name}
+            {city} · The City
+          </div>
+          <div className="absolute bottom-4 right-4 flex flex-col items-end gap-1 font-mono text-[10.5px] text-cream/70 [text-shadow:0_2px_10px_rgba(0,0,0,0.9)]">
+            <div>Wall size: {wallSize}%</div>
+            <div>Trees size: {treesSize}%</div>
+            <div>Roads: {showRoads ? "ON" : "OFF"}</div>
+            <div>People: {showPeople ? "ON" : "OFF"}</div>
           </div>
         </div>
       </Reveal>

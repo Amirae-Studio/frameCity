@@ -4,11 +4,11 @@ import Image from "next/image";
 import { motion } from "framer-motion";
 import { Reveal } from "./Reveal";
 
-const stats = [
-  { value: "1,240", label: "backers" },
-  { value: "214%", label: "funded" },
-  { value: "18", label: "days left" },
-];
+// const stats = [
+//   { value: "1,240", label: "backers" },
+//   { value: "214%", label: "funded" },
+//   { value: "18", label: "days left" },
+// ];
 
 export function Support() {
   return (
@@ -42,7 +42,7 @@ export function Support() {
             </p>
           </Reveal>
 
-          <Reveal>
+          {/* <Reveal>
             <div className="mb-[14px] flex justify-between font-mono text-[12.5px] text-cream/60">
               <span>$42,180 pledged</span>
               <span>214% funded</span>
@@ -57,9 +57,9 @@ export function Support() {
                 style={{ background: "var(--accent)" }}
               />
             </div>
-          </Reveal>
+          </Reveal> */}
 
-          <Reveal className="mb-9 flex gap-11">
+          {/* <Reveal className="mb-9 flex gap-11">
             {stats.map((s) => (
               <div key={s.label}>
                 <div className="font-display text-[34px] font-normal">
@@ -70,17 +70,19 @@ export function Support() {
                 </div>
               </div>
             ))}
-          </Reveal>
+          </Reveal> */}
 
           <Reveal className="flex flex-wrap gap-[14px]">
             <a
-              href="#"
+              href="https://makerworld.com/en/crowdfunding/313-framecity-high-detailed-cities-in-frames"
+              target="_blank"
               className="rounded-full bg-cream px-8 py-4 text-[14.5px] text-[var(--color-base)] no-underline transition-transform duration-300 hover:scale-[1.03]"
             >
               Back us on MakerWorld
             </a>
             <a
-              href="#"
+              href="https://makerworld.com/en/crowdfunding/313-framecity-high-detailed-cities-in-frames"
+              target="_blank"
               className="inline-flex items-center rounded-full border border-cream/[0.28] bg-transparent px-7 py-4 text-[14.5px] text-cream no-underline transition-colors duration-300 hover:border-cream/60"
             >
               See the rewards

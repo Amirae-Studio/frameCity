@@ -87,6 +87,12 @@ export function AccessGate({ email }: { email: string }) {
         {status === "error" && (
           <p className="m-0 text-center text-[13px] text-[#c96f5a]">{message}</p>
         )}
+        <button
+          onClick={() => router.push("/")}
+          className="w-full rounded-full bg-cream px-6 py-[14px] text-[14.5px] text-[var(--color-base)] transition-transform duration-300 hover:scale-[1.02] disabled:opacity-50"
+        >
+          Back to Home
+        </button>
       </form>
 
       <p className="m-0 mt-6 text-center text-[12.5px] leading-[1.7] text-cream/40">
