@@ -14,7 +14,7 @@ export function GalleryView({ images }: { images: GalleryImage[] }) {
   if (!images || images.length === 0) {
     return (
       <div className="py-20 text-center text-cream/60">
-        <p className="text-lg">No images found in the gallery bucket.</p>
+        <p className="text-lg">Comming Soon.....</p>
       </div>
     );
   }
