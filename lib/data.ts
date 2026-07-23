@@ -1,20 +1,20 @@
 export type City = {
   name: string;
   img: string | null;
-  price: string;
+  price?: string;
 };
 
 export const cities: City[] = [
-  { name: "Paris", img: "/paris-frame.jpg", price: "from $240" },
-  { name: "London", img: "/london-preview.jpg", price: "from $240" },
-  { name: "New York", img: null, price: "from $260" },
-  { name: "Tokyo", img: null, price: "from $260" },
-  { name: "Hong Kong", img: null, price: "from $240" },
-  { name: "Singapore", img: null, price: "from $240" },
-  { name: "Dubai", img: null, price: "from $280" },
-  { name: "Chicago", img: null, price: "from $240" },
-  { name: "Sydney", img: null, price: "from $240" },
-  { name: "San Francisco", img: null, price: "from $240" },
+  { name: "Paris", img: "/paris-frame.jpg" },
+  { name: "London", img: "/london-preview.jpg" },
+  { name: "New York", img: null },
+  { name: "Tokyo", img: null },
+  { name: "Hong Kong", img: null },
+  { name: "Singapore", img: null },
+  { name: "Dubai", img: null },
+  { name: "Chicago", img: null },
+  { name: "Sydney", img: null },
+  { name: "San Francisco", img: null },
 ];
 
 export const marqueeNames = [

@@ -69,11 +69,11 @@ export function Collection() {
               <span className="font-display text-[21px] font-medium">
                 {city.name}
               </span>
-              {showPrices && (
+              {/* {showPrices && (
                 <span className="font-mono text-[12px] text-cream/50">
-                  {city.price}
+                  {city.price || "from $240"}
                 </span>
-              )}
+              )} */}
             </div>
           </motion.a>
         ))}

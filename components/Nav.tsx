@@ -6,17 +6,21 @@ import { Logo } from "./Logo";
 import { ThemeToggle } from "./ThemeToggle";
 import { CTA_LABEL } from "@/lib/data";
 import { createClient } from "@/lib/supabase/client";
+import { usePathname } from "next/navigation";
 import { toNavUser, type NavUser } from "@/lib/user";
-
-const links = [
-  { label: "Collection", href: "#collection" },
-  { label: "Craft", href: "#craft" },
-  { label: "Create", href: "#create" },
-  { label: "Support", href: "#support" },
-];
 
 export function Nav({ initialUser }: { initialUser: NavUser | null }) {
   const [user, setUser] = useState<NavUser | null>(initialUser);
+  const pathname = usePathname();
+  const isHome = pathname === "/";
+
+  const links = [
+    { label: "Collection", href: isHome ? "#collection" : "/#collection" },
+    { label: "Craft", href: isHome ? "#craft" : "/#craft" },
+    { label: "Create", href: isHome ? "#create" : "/#create" },
+    { label: "Gallery", href: "/gallery" },
+    { label: "Support", href: isHome ? "#support" : "/#support" },
+  ];
 
   // Keep the nav in sync if the user signs in/out (e.g. in another tab).
   useEffect(() => {
