@@ -10,6 +10,7 @@ import type { NavUser } from "@/lib/user";
 import { useTheme } from "@/lib/theme";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { getModelFiles, type ModelFile } from "@/app/studio/actions";
+import { recordDownload } from "@/app/actions/downloads";
 import type { GizmoMode } from "./StudioScene";
 
 const StudioScene = dynamic(() => import("./StudioScene"), {
@@ -52,6 +53,11 @@ export function StudioConfigurator({
   const [printerId, setPrinterId] = useState("a1");
   const [mode, setMode] = useState<GizmoMode>("translate");
   const [tf, setTf] = useState<Transform>(INITIAL_TF);
+
+  // Download quota & export states
+  const [isExporting, setIsExporting] = useState(false);
+  const [downloadNotice, setDownloadNotice] = useState<string | null>(null);
+  const [downloadLimitModal, setDownloadLimitModal] = useState(false);
 
   // Live "Manipulate city" controls — applied per layer in the scene.
   const [cityCtl, setCityCtl] = useState<CityControls>(CITY_DEFAULTS);
@@ -120,31 +126,122 @@ export function StudioConfigurator({
   async function downloadStl() {
     const mesh = meshRef.current;
     if (!mesh) return;
-    const { STLExporter } = await import(
-      "three/examples/jsm/exporters/STLExporter.js"
-    );
-    mesh.updateWorldMatrix(true, false);
-    // STLExporter ignores `visible`, so temporarily detach hidden layers
-    // (e.g. roads when "Hide roads" is on) to keep them out of the print.
-    const hidden: { parent: THREE.Object3D; child: THREE.Object3D }[] = [];
-    mesh.traverse((o) => {
-      if (!o.visible && o.parent) hidden.push({ parent: o.parent, child: o });
-    });
-    hidden.forEach((h) => h.parent.remove(h.child));
-    const data = new STLExporter().parse(mesh, { binary: true });
-    hidden.forEach((h) => h.parent.add(h.child));
-    const buffer = (data as DataView).buffer as ArrayBuffer;
-    const blob = new Blob([buffer], { type: "model/stl" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `framecity-${city.slug}-${location.slug}.stl`;
-    a.click();
-    URL.revokeObjectURL(url);
+
+    setIsExporting(true);
+    setDownloadNotice(null);
+
+    // Record download in Supabase & check monthly quota for Explorer tier
+    const res = await recordDownload(city.slug, location.slug);
+    if (!res.ok) {
+      setIsExporting(false);
+      if (res.error === "limit_reached" || res.remaining === 0) {
+        setDownloadLimitModal(true);
+      } else {
+        alert(res.error || "Failed to process download quota.");
+      }
+      return;
+    }
+
+    try {
+      const { STLExporter } = await import(
+        "three/examples/jsm/exporters/STLExporter.js"
+      );
+      mesh.updateWorldMatrix(true, false);
+      // STLExporter ignores `visible`, so temporarily detach hidden layers
+      // (e.g. roads when "Hide roads" is on) to keep them out of the print.
+      const hidden: { parent: THREE.Object3D; child: THREE.Object3D }[] = [];
+      mesh.traverse((o) => {
+        if (!o.visible && o.parent) hidden.push({ parent: o.parent, child: o });
+      });
+      hidden.forEach((h) => h.parent.remove(h.child));
+      const data = new STLExporter().parse(mesh, { binary: true });
+      hidden.forEach((h) => h.parent.add(h.child));
+      const buffer = (data as DataView).buffer as ArrayBuffer;
+      const blob = new Blob([buffer], { type: "model/stl" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `framecity-${city.slug}-${location.slug}.stl`;
+      a.click();
+      URL.revokeObjectURL(url);
+
+      if (res.tier === "explorer" && res.remaining !== undefined) {
+        setDownloadNotice(
+          `Download recorded! ${res.remaining} downloads remaining this month.`
+        );
+      } else {
+        setDownloadNotice("Download recorded! STL file ready.");
+      }
+    } catch (err) {
+      console.error("Export error:", err);
+      alert("Failed to generate STL file.");
+    } finally {
+      setIsExporting(false);
+    }
   }
 
   return (
     <div className="flex min-h-dvh flex-col bg-base text-cream">
+      {/* Toast Notice */}
+      <AnimatePresence>
+        {downloadNotice && (
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className="fixed top-4 left-1/2 z-50 -translate-x-1/2 rounded-full border border-[var(--accent)] bg-deep/90 px-6 py-3 font-mono text-[12px] text-cream shadow-2xl backdrop-blur-md flex items-center gap-3"
+          >
+            <span className="h-2 w-2 rounded-full bg-[var(--accent)] animate-pulse" />
+            <span>{downloadNotice}</span>
+            <button
+              onClick={() => setDownloadNotice(null)}
+              className="ml-2 text-cream/40 hover:text-cream text-[14px]"
+            >
+              ✕
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Explorer Monthly Limit Modal */}
+      <AnimatePresence>
+        {downloadLimitModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="w-full max-w-[420px] rounded-2xl border border-cream/[0.16] bg-panel p-6 shadow-2xl"
+            >
+              <div className="mb-2 font-mono text-[10px] font-bold uppercase tracking-[0.24em] text-[#e07a5f]">
+                Quota Limit Reached
+              </div>
+              <h2 className="m-0 mb-3 font-display text-[24px] font-medium text-cream">
+                Monthly Limit Reached
+              </h2>
+              <p className="m-0 mb-6 text-[14px] leading-[1.6] text-cream/70">
+                You have reached your <strong className="text-cream">25 downloads per month</strong> limit on the Explorer tier.
+                Your quota will automatically reset on the 1st of next month.
+              </p>
+              <div className="flex flex-col gap-2.5">
+                <Link
+                  href="/account"
+                  className="w-full rounded-full bg-cream py-3 text-center text-[13.5px] font-medium text-[var(--color-base)] no-underline transition-transform hover:scale-[1.02]"
+                >
+                  View Account Quota
+                </Link>
+                <button
+                  onClick={() => setDownloadLimitModal(false)}
+                  className="w-full rounded-full border border-cream/20 py-3 text-center text-[13.5px] text-cream/70 hover:bg-cream/5"
+                >
+                  Close
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       {/* ------------------------------------------------ top bar */}
       <header className="sticky top-0 z-30 flex h-16 items-center justify-between gap-3 border-b border-cream/[0.09] bg-deep/70 px-4 backdrop-blur-xl md:px-6">
         <div className="flex min-w-0 items-center gap-4">
@@ -199,7 +296,8 @@ export function StudioConfigurator({
           <ThemeToggle />
           <button
             onClick={downloadStl}
-            className="group flex items-center gap-2 rounded-full bg-cream px-5 py-[10px] text-[13px] text-[var(--color-base)] transition-transform duration-300 hover:scale-[1.03]"
+            disabled={isExporting}
+            className="group flex items-center gap-2 rounded-full bg-cream px-5 py-[10px] text-[13px] text-[var(--color-base)] transition-transform duration-300 hover:scale-[1.03] disabled:opacity-50"
           >
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden>
               <path
@@ -210,7 +308,7 @@ export function StudioConfigurator({
                 strokeLinejoin="round"
               />
             </svg>
-            Download
+            {isExporting ? "Exporting…" : "Download"}
           </button>
         </div>
       </header>
