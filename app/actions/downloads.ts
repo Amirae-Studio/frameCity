@@ -14,6 +14,7 @@ export type DownloadResult =
   | {
       ok: false;
       error: string;
+      isTempAccess?: boolean;
       tier?: string;
       used?: number;
       limit?: number;
@@ -22,6 +23,7 @@ export type DownloadResult =
 
 export type UserDownloadStats = {
   hasAccess: boolean;
+  isTempAccess?: boolean;
   tier: "explorer" | "architect" | "studio";
   monthlyCount: number;
   monthlyLimit: number | null; // 25 for explorer, null for architect/studio
@@ -34,6 +36,36 @@ export type UserDownloadStats = {
     downloadedAt: string;
   }>;
 };
+
+export async function checkUserTempAccess(): Promise<boolean> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) return false;
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("has_access, redeemed_code, is_temp_access")
+    .eq("id", user.id)
+    .single();
+
+  if (!profile || !profile.has_access) return false;
+
+  if (profile.redeemed_code) {
+    const { data: codeRow } = await supabase
+      .from("access_codes")
+      .select("temp_access_code")
+      .eq("code", profile.redeemed_code)
+      .single();
+    if (codeRow && typeof codeRow.temp_access_code === "boolean") {
+      return codeRow.temp_access_code;
+    }
+  }
+
+  return !!profile.is_temp_access;
+}
 
 export async function recordDownload(
   citySlug: string,
@@ -49,6 +81,41 @@ export async function recordDownload(
     return { ok: false, error: "Not authenticated" };
   }
 
+  // Check temporary access restriction
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("has_access, redeemed_code, is_temp_access, tier")
+    .eq("id", user.id)
+    .single();
+
+  if (!profile?.has_access) {
+    return { ok: false, error: "You must unlock access with a valid code first." };
+  }
+
+  let isTemp = false;
+  if (profile.redeemed_code) {
+    const { data: codeRow } = await supabase
+      .from("access_codes")
+      .select("temp_access_code")
+      .eq("code", profile.redeemed_code)
+      .single();
+    if (codeRow && typeof codeRow.temp_access_code === "boolean") {
+      isTemp = codeRow.temp_access_code;
+    } else {
+      isTemp = !!profile.is_temp_access;
+    }
+  } else {
+    isTemp = !!profile.is_temp_access;
+  }
+
+  if (isTemp) {
+    return {
+      ok: false,
+      error: "Due to security policy not able to download until campaign finish.",
+      isTempAccess: true,
+    };
+  }
+
   // Call the atomic RPC in Supabase
   const { data, error } = await supabase.rpc("record_user_download", {
     p_city_slug: citySlug,
@@ -58,13 +125,7 @@ export async function recordDownload(
   if (error) {
     console.error("Download recording failed RPC error:", error);
     // Fallback logic if RPC fails or table is directly queried
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("tier, has_access")
-      .eq("id", user.id)
-      .single();
-
-    if (!profile?.has_access || !profile.tier) {
+    if (!profile.tier) {
       return { ok: false, error: "You must unlock access with a valid code first." };
     }
 
@@ -121,23 +182,27 @@ export async function getUserDownloadStats(): Promise<UserDownloadStats | null> 
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("has_access, tier, redeemed_code, redeemed_at")
+    .select("has_access, tier, redeemed_code, redeemed_at, is_temp_access")
     .eq("id", user.id)
     .single();
 
   if (!profile || !profile.has_access) return null;
 
   let tier = profile.tier as "explorer" | "architect" | "studio" | null;
+  let isTempAccess = !!profile.is_temp_access;
 
   // Dynamically fetch live tier from access_codes table to guarantee real-time sync
   if (profile.redeemed_code) {
     const { data: codeRow } = await supabase
       .from("access_codes")
-      .select("tier")
+      .select("tier, temp_access_code")
       .eq("code", profile.redeemed_code)
       .single();
     if (codeRow?.tier) {
       tier = codeRow.tier as "explorer" | "architect" | "studio";
+    }
+    if (codeRow && typeof codeRow.temp_access_code === "boolean") {
+      isTempAccess = codeRow.temp_access_code;
     }
   }
 
@@ -197,6 +262,7 @@ export async function getUserDownloadStats(): Promise<UserDownloadStats | null> 
 
   return {
     hasAccess,
+    isTempAccess,
     tier,
     monthlyCount,
     monthlyLimit,

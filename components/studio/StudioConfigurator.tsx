@@ -11,6 +11,7 @@ import { useTheme } from "@/lib/theme";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { getModelFiles, type ModelFile } from "@/app/studio/actions";
 import { recordDownload } from "@/app/actions/downloads";
+import { TempAccessModal } from "@/components/TempAccessModal";
 import type { GizmoMode } from "./StudioScene";
 
 const StudioScene = dynamic(() => import("./StudioScene"), {
@@ -58,6 +59,7 @@ export function StudioConfigurator({
   const [isExporting, setIsExporting] = useState(false);
   const [downloadNotice, setDownloadNotice] = useState<string | null>(null);
   const [downloadLimitModal, setDownloadLimitModal] = useState(false);
+  const [tempAccessModalOpen, setTempAccessModalOpen] = useState(false);
 
   // Live "Manipulate city" controls — applied per layer in the scene.
   const [cityCtl, setCityCtl] = useState<CityControls>(CITY_DEFAULTS);
@@ -134,7 +136,9 @@ export function StudioConfigurator({
     const res = await recordDownload(city.slug, location.slug);
     if (!res.ok) {
       setIsExporting(false);
-      if (res.error === "limit_reached" || res.remaining === 0) {
+      if (res.isTempAccess) {
+        setTempAccessModalOpen(true);
+      } else if (res.error === "limit_reached" || res.remaining === 0) {
         setDownloadLimitModal(true);
       } else {
         alert(res.error || "Failed to process download quota.");
@@ -241,6 +245,12 @@ export function StudioConfigurator({
           </div>
         )}
       </AnimatePresence>
+
+      {/* Temporary Access Security Policy Modal */}
+      <TempAccessModal
+        isOpen={tempAccessModalOpen}
+        onClose={() => setTempAccessModalOpen(false)}
+      />
 
       {/* ------------------------------------------------ top bar */}
       <header className="sticky top-0 z-30 flex h-16 items-center justify-between gap-3 border-b border-cream/[0.09] bg-deep/70 px-4 backdrop-blur-xl md:px-6">
