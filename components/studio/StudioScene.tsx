@@ -181,7 +181,13 @@ function CityAssembly({
       layer.name = file.name; // "roads", "terrain", "small-building", …
       layer.traverse((o) => {
         const m = o as THREE.Mesh;
-        if (m.isMesh) m.castShadow = true;
+        if (m.isMesh) {
+          m.castShadow = true;
+          if (m.geometry && m.geometry.attributes.position) {
+            // Save un-deformed original position array for non-destructive vertex deformation
+            m.userData.origPosition = m.geometry.attributes.position.array.slice();
+          }
+        }
       });
       object.add(layer);
     });
@@ -282,51 +288,55 @@ function CityAssembly({
     };
   }, [gltfs, files]);
 
-  // Compute dynamic Y bounds so the entire model assembly rests above the checkerboard bed plate
+  // Compute dynamic Y bounds so the entire model assembly rests above the checkerboard bed plate.
   const { lowestY, totalHeight } = useMemo(() => {
     const sTerrain = controls.terrain / 100;
-    const deltaY = (sTerrain - 1) * terrainHeightAtRest;
+    const terrainInfo = layerInfo.get("terrain");
+    const totalH = terrainInfo ? terrainInfo.max[upAxis] - terrainInfo.min[upAxis] : 0;
+    const baseHeight = totalH * 0.4;
+    const currentTerrainBottom = terrainBottomAtRest - (sTerrain - 1) * baseHeight;
+    const REVIT_OVERLAP = 0.035;
     const h = baseDimensions.height * (controls.revitHeight / 100);
-    const revitBottom = terrainBottomAtRest - h;
-    const lowestY = controls.enableRevit
-      ? Math.min(boxMin[upAxis], revitBottom)
-      : boxMin[upAxis];
-    const highestY = boxMax[upAxis] + Math.max(0, deltaY);
-    const totalHeight = highestY - lowestY;
+    const revitBottom = currentTerrainBottom + REVIT_OVERLAP - h;
+    const lowestPoint = controls.enableRevit
+      ? Math.min(currentTerrainBottom, revitBottom)
+      : currentTerrainBottom;
+    const lowestY = Math.min(boxMin[upAxis], lowestPoint);
+    const totalHeight = boxMax[upAxis] - lowestY;
     return { lowestY, totalHeight };
   }, [
     controls.enableRevit,
     controls.revitHeight,
     controls.terrain,
-    terrainHeightAtRest,
-    baseDimensions,
     terrainBottomAtRest,
+    baseDimensions,
     boxMin,
     boxMax,
     upAxis,
+    layerInfo,
   ]);
+
 
   // Apply the Manipulate City controls, non-destructively.
   // When the revit frame is enabled, we also run a CSG boolean subtraction:
   // every mesh whose name starts with "boolean_cube" is carved out of the
   // revit geometry so the frame disappears in those footprints.
   useEffect(() => {
-    // Delta vertical shift of top surface of terrain when terrain height is scaled
     const sTerrain = controls.terrain / 100;
-    const deltaY = (sTerrain - 1) * terrainHeightAtRest;
 
+    // Non-terrain components stay right at rest positions on the terrain surface.
+    const COMPONENT_INSERTION = 0;
     const apply = (name: string, vert: number, all: number) => {
       const layer = object.getObjectByName(name);
       const info = layerInfo.get(name);
-      if (!layer || !info) return;
+      if (!layer || !info || name === "terrain") return;
       AXES.forEach((a) => {
         const s = (a === upAxis ? vert : 1) * all;
         const anchor = a === upAxis ? info.min[a] : info.center[a];
         layer.scale[a] = s;
         let pos = anchor * (1 - s);
-        // Objects sitting on top of terrain shift along upAxis by deltaY so they stay on top
-        if (a === upAxis && name !== "terrain" && name !== "revit") {
-          pos += deltaY;
+        if (a === upAxis) {
+          pos -= COMPONENT_INSERTION;
         }
         layer.position[a] = pos;
       });
@@ -334,9 +344,56 @@ function CityAssembly({
 
     apply("small-building", controls.small / 100, 1);
     apply("main-building", 1, controls.large / 100);
-    apply("terrain", controls.terrain / 100, 1);
     apply("roads", controls.roads / 100, 1);
     apply("trees", controls.trees / 100, 1);
+    apply("grass", 1, 1);
+
+    // Deform terrain base block from bottom up — top surface topography (t=1) stays fixed (0 delta).
+    const terrainLayer = object.getObjectByName("terrain");
+    const terrainInfo = layerInfo.get("terrain");
+    let currentTerrainBottom = terrainBottomAtRest;
+    if (terrainLayer && terrainInfo) {
+      const minY = terrainInfo.min[upAxis];
+      const maxY = terrainInfo.max[upAxis];
+      const totalH = maxY - minY;
+      const topThreshold = minY + 0.35 * totalH;
+      const baseHeight = topThreshold - minY;
+      currentTerrainBottom = minY - (sTerrain - 1) * baseHeight;
+
+      terrainLayer.position.set(0, 0, 0);
+      terrainLayer.scale.set(1, 1, 1);
+
+      terrainLayer.traverse((child) => {
+        const m = child as THREE.Mesh;
+        if (m.isMesh && m.geometry && m.userData.origPosition) {
+          const orig = m.userData.origPosition as Float32Array;
+          const posAttr = m.geometry.attributes.position;
+          const arr = posAttr.array as Float32Array;
+
+          m.updateMatrix();
+          const localMat = m.matrix;
+          const invMat = localMat.clone().invert();
+          const v = new THREE.Vector3();
+
+          for (let i = 0; i < orig.length; i += 3) {
+            v.set(orig[i], orig[i + 1], orig[i + 2]);
+            v.applyMatrix4(localMat);
+
+            const yLocal = v[upAxis];
+            const t = THREE.MathUtils.clamp((yLocal - minY) / (topThreshold - minY), 0, 1);
+            const delta = (1 - t) * (sTerrain - 1) * baseHeight;
+            v[upAxis] = yLocal - delta;
+
+            v.applyMatrix4(invMat);
+            arr[i] = v.x;
+            arr[i + 1] = v.y;
+            arr[i + 2] = v.z;
+          }
+          posAttr.needsUpdate = true;
+          m.geometry.computeVertexNormals();
+        }
+      });
+    }
 
     // Hide boolean_cube layer (subtraction volume only)
     object.children.forEach((layer) => {
@@ -350,23 +407,26 @@ function CityAssembly({
       }
     });
 
-    // Apply Revit base frame layer controls — with boolean_cube masking.
-    // We rebuild the revit geometry as a grid of small cells; any cell whose
-    // centre falls inside a boolean_cube bounding box is omitted.
+    // Apply Revit base frame layer controls — inserted inside currentTerrainBottom
     const revitLayer = object.getObjectByName("revit") as THREE.Mesh | undefined;
     if (revitLayer) {
       revitLayer.visible = !!controls.enableRevit;
       if (controls.enableRevit) {
         const h = baseDimensions.height * (controls.revitHeight / 100);
-        const w = baseDimensions.width * (controls.revitWidth / 100);
-        const d = baseDimensions.depth * (controls.revitBreadth / 100);
+        const wScale = controls.revitUniformScale
+          ? controls.revitUniform / 100
+          : controls.revitWidth / 100;
+        const dScale = controls.revitUniformScale
+          ? controls.revitUniform / 100
+          : controls.revitBreadth / 100;
+        const w = baseDimensions.width * wScale;
+        const d = baseDimensions.depth * dScale;
 
-        // Ensure object local transforms are current
         object.updateMatrixWorld(true);
 
-        // The revit frame is centred at (center.x, terrainBottomAtRest - h/2, center.z)
+        const REVIT_OVERLAP = 0.035;
         const rx = center[horizAxes[0]];
-        const ry = terrainBottomAtRest - h / 2;
+        const ry = currentTerrainBottom + REVIT_OVERLAP - h / 2;
         const rz = center[horizAxes[1]];
 
         // Create local-space cloned meshes of boolean_cube for exact 3D geometry raycasting

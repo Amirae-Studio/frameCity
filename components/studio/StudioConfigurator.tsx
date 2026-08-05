@@ -534,22 +534,56 @@ export function StudioConfigurator({
                               suffix="%"
                               onChange={(v) => setCtl("revitHeight", v)}
                             />
-                            <Slider
-                              label="Frame width"
-                              value={cityCtl.revitWidth}
-                              min={50}
-                              max={200}
-                              suffix="%"
-                              onChange={(v) => setCtl("revitWidth", v)}
-                            />
-                            <Slider
-                              label="Frame breadth"
-                              value={cityCtl.revitBreadth}
-                              min={50}
-                              max={200}
-                              suffix="%"
-                              onChange={(v) => setCtl("revitBreadth", v)}
-                            />
+                            {/* Uniform vs Independent toggle for width/breadth */}
+                            <div className="flex items-center justify-between">
+                              <span className="text-[11.5px] text-cream/60">Uniform W+D</span>
+                              <button
+                                onClick={() => setCtl("revitUniformScale", !cityCtl.revitUniformScale)}
+                                aria-pressed={cityCtl.revitUniformScale}
+                                aria-label="Toggle uniform scale"
+                                className="relative inline-block h-[18px] w-[32px] rounded-full transition-colors duration-200"
+                                style={{
+                                  background: cityCtl.revitUniformScale
+                                    ? "var(--accent)"
+                                    : "rgba(var(--ink-rgb), 0.18)",
+                                }}
+                              >
+                                <motion.span
+                                  className="absolute top-[2px] h-[14px] w-[14px] rounded-full bg-cream"
+                                  animate={{ left: cityCtl.revitUniformScale ? 16 : 2 }}
+                                  transition={{ type: "spring", stiffness: 500, damping: 32 }}
+                                />
+                              </button>
+                            </div>
+                            {cityCtl.revitUniformScale ? (
+                              <Slider
+                                label="Frame size (W+D)"
+                                value={cityCtl.revitUniform}
+                                min={50}
+                                max={200}
+                                suffix="%"
+                                onChange={(v) => setCtl("revitUniform", v)}
+                              />
+                            ) : (
+                              <>
+                                <Slider
+                                  label="Frame width"
+                                  value={cityCtl.revitWidth}
+                                  min={50}
+                                  max={200}
+                                  suffix="%"
+                                  onChange={(v) => setCtl("revitWidth", v)}
+                                />
+                                <Slider
+                                  label="Frame breadth"
+                                  value={cityCtl.revitBreadth}
+                                  min={50}
+                                  max={200}
+                                  suffix="%"
+                                  onChange={(v) => setCtl("revitBreadth", v)}
+                                />
+                              </>
+                            )}
                           </div>
                         )}
                       </div>

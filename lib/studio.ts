@@ -102,8 +102,10 @@ export type CityControls = {
   // Revit sub-foundation frame layer controls
   enableRevit: boolean;
   revitHeight: number; // frame height/thickness (% scale)
-  revitWidth: number; // frame width (% scale)
-  revitBreadth: number; // frame breadth/depth (% scale)
+  revitWidth: number; // frame width (% scale) — used in independent mode
+  revitBreadth: number; // frame breadth/depth (% scale) — used in independent mode
+  revitUniformScale: boolean; // true = single slider scales W+D equally
+  revitUniform: number; // uniform W+D scale (% scale) — used when revitUniformScale = true
 };
 
 export const CITY_DEFAULTS: CityControls = {
@@ -119,4 +121,6 @@ export const CITY_DEFAULTS: CityControls = {
   revitHeight: 35,
   revitWidth: 100,
   revitBreadth: 100,
+  revitUniformScale: true,
+  revitUniform: 100,
 };
