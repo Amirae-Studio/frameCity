@@ -516,6 +516,43 @@ export function StudioConfigurator({
                           onChange={(v) => setCtl("hideGrass", v)}
                         />
                       )}
+
+                      {/* Revit Sub-foundation Base Frame Layer Controls */}
+                      <div className="mt-2 flex flex-col gap-3 border-t border-cream/[0.09] pt-4">
+                        <Toggle
+                          label="Revit base frame layer"
+                          on={cityCtl.enableRevit}
+                          onChange={(v) => setCtl("enableRevit", v)}
+                        />
+                        {cityCtl.enableRevit && (
+                          <div className="flex flex-col gap-4 border-l border-[var(--accent)]/40 pl-3.5 pt-1">
+                            <Slider
+                              label="Frame height"
+                              value={cityCtl.revitHeight}
+                              min={20}
+                              max={300}
+                              suffix="%"
+                              onChange={(v) => setCtl("revitHeight", v)}
+                            />
+                            <Slider
+                              label="Frame width"
+                              value={cityCtl.revitWidth}
+                              min={50}
+                              max={200}
+                              suffix="%"
+                              onChange={(v) => setCtl("revitWidth", v)}
+                            />
+                            <Slider
+                              label="Frame breadth"
+                              value={cityCtl.revitBreadth}
+                              min={50}
+                              max={200}
+                              suffix="%"
+                              onChange={(v) => setCtl("revitBreadth", v)}
+                            />
+                          </div>
+                        )}
+                      </div>
                     </>
                   )}
 

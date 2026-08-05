@@ -10,6 +10,7 @@ import {
   Html,
 } from "@react-three/drei";
 import * as THREE from "three";
+import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { MM, type CityControls } from "@/lib/studio";
 import type { ModelFile } from "@/app/studio/actions";
 
@@ -121,6 +122,30 @@ const TARGET_SIZE = 4;
 type Axis = "x" | "y" | "z";
 const AXES: Axis[] = ["x", "y", "z"];
 
+function getLocalBoundingBox(node: THREE.Object3D, container: THREE.Object3D): THREE.Box3 {
+  const box = new THREE.Box3();
+  node.traverse((child) => {
+    const mesh = child as THREE.Mesh;
+    if (mesh.isMesh && mesh.geometry) {
+      if (!mesh.geometry.boundingBox) {
+        mesh.geometry.computeBoundingBox();
+      }
+      if (mesh.geometry.boundingBox) {
+        const b = mesh.geometry.boundingBox.clone();
+        const localMatrix = new THREE.Matrix4().identity();
+        let curr: THREE.Object3D | null = mesh;
+        while (curr && curr !== container) {
+          localMatrix.premultiply(curr.matrix);
+          curr = curr.parent;
+        }
+        b.applyMatrix4(localMatrix);
+        box.union(b);
+      }
+    }
+  });
+  return box;
+}
+
 function CityAssembly({
   files,
   mode,
@@ -136,63 +161,160 @@ function CityAssembly({
 }) {
   const gltfs = useGLTF(files.map((f) => f.url));
 
-  const { object, scale, center, halfHeight, layerInfo, upAxis } =
-    useMemo(() => {
-      const object = new THREE.Group();
-      files.forEach((file, i) => {
-        const layer = gltfs[i].scene.clone(true);
-        layer.name = file.name; // "roads", "terrain", "small-building", …
-        layer.traverse((o) => {
-          const m = o as THREE.Mesh;
-          if (m.isMesh) m.castShadow = true;
-        });
-        object.add(layer);
+  const {
+    object,
+    scale,
+    center,
+    halfHeight,
+    layerInfo,
+    upAxis,
+    horizAxes,
+    baseDimensions,
+    terrainBottomAtRest,
+    terrainHeightAtRest,
+    boxMin,
+    boxMax,
+  } = useMemo(() => {
+    const object = new THREE.Group();
+    files.forEach((file, i) => {
+      const layer = gltfs[i].scene.clone(true);
+      layer.name = file.name; // "roads", "terrain", "small-building", …
+      layer.traverse((o) => {
+        const m = o as THREE.Mesh;
+        if (m.isMesh) m.castShadow = true;
       });
+      object.add(layer);
+    });
 
-      // Which axis is "up"? Flat layers (roads/terrain/grass) are thinnest
-      // along it — robust whether the exports are Y-up or Z-up.
-      let upAxis: Axis = "y";
-      const flat = ["roads", "terrain", "grass"]
-        .map((n) => object.getObjectByName(n))
-        .find(Boolean);
-      if (flat) {
-        const s = new THREE.Vector3();
-        new THREE.Box3().setFromObject(flat).getSize(s);
-        upAxis = s.x < s.y ? (s.x < s.z ? "x" : "z") : s.y < s.z ? "y" : "z";
+    // Which axis is "up"? Flat layers (roads/terrain/grass) are thinnest
+    // along it — robust whether the exports are Y-up or Z-up.
+    let upAxis: Axis = "y";
+    const flat = ["roads", "terrain", "grass"]
+      .map((n) => object.getObjectByName(n))
+      .find(Boolean);
+    if (flat) {
+      const s = new THREE.Vector3();
+      new THREE.Box3().setFromObject(flat).getSize(s);
+      upAxis = s.x < s.y ? (s.x < s.z ? "x" : "z") : s.y < s.z ? "y" : "z";
+    }
+
+    const horizAxes = AXES.filter((a) => a !== upAxis) as [Axis, Axis];
+
+    // Per-layer anchors (at rest): base along up-axis, centre elsewhere.
+    const layerInfo = new Map<
+      string,
+      { min: THREE.Vector3; max: THREE.Vector3; center: THREE.Vector3 }
+    >();
+    object.children.forEach((layer) => {
+      const b = new THREE.Box3().setFromObject(layer);
+      const c = new THREE.Vector3();
+      b.getCenter(c);
+      layerInfo.set(layer.name, {
+        min: b.min.clone(),
+        max: b.max.clone(),
+        center: c,
+      });
+    });
+
+    // Compute bounding box ONLY for city model layers (excluding revit and boolean_cube)
+    const box = new THREE.Box3();
+    object.children.forEach((layer) => {
+      if (layer.name !== "revit" && !layer.name.startsWith("boolean_cube")) {
+        box.expandByObject(layer);
       }
+    });
+    if (box.isEmpty()) {
+      box.setFromObject(object);
+    }
 
-      // Per-layer anchors (at rest): base along up-axis, centre elsewhere.
-      const layerInfo = new Map<
-        string,
-        { min: THREE.Vector3; center: THREE.Vector3 }
-      >();
-      object.children.forEach((layer) => {
-        const b = new THREE.Box3().setFromObject(layer);
-        const c = new THREE.Vector3();
-        b.getCenter(c);
-        layerInfo.set(layer.name, { min: b.min.clone(), center: c });
-      });
+    const size = new THREE.Vector3();
+    const center = new THREE.Vector3();
+    box.getSize(size);
+    box.getCenter(center);
 
-      const box = new THREE.Box3().setFromObject(object);
-      const size = new THREE.Vector3();
-      const center = new THREE.Vector3();
-      box.getSize(size);
-      box.getCenter(center);
-      const scale = TARGET_SIZE / (Math.max(size.x, size.y, size.z) || 1);
-      return {
-        object,
-        scale,
-        center,
-        halfHeight: (size.y * scale) / 2,
-        layerInfo,
-        upAxis,
-      };
-    }, [gltfs, files]);
+    const boxMin = box.min.clone();
+    const boxMax = box.max.clone();
 
-  // Apply the Manipulate City controls, non-destructively. Scaling a layer
-  // by s about anchor a: p → p·s + a·(1−s), so bases stay planted and the
-  // large-building footprint stays centred.
+    const terrainInfo = layerInfo.get("terrain");
+    const terrainBottomAtRest = terrainInfo
+      ? terrainInfo.min[upAxis]
+      : box.min[upAxis];
+    const terrainHeightAtRest = terrainInfo
+      ? terrainInfo.max[upAxis] - terrainInfo.min[upAxis]
+      : 0;
+
+    // Create dynamic Revit base frame mesh underneath the terrain
+    const baseHeight0 = Math.max(0.08, size[upAxis] * 0.12);
+    const baseWidth0 = size[horizAxes[0]] || 1;
+    const baseDepth0 = size[horizAxes[1]] || 1;
+
+    const revitGeom = new THREE.BoxGeometry(1, 1, 1);
+    const revitMat = new THREE.MeshStandardMaterial({
+      color: "#e9e6df",
+      roughness: 0.65,
+      metalness: 0.05,
+    });
+    const revitMesh = new THREE.Mesh(revitGeom, revitMat);
+    revitMesh.name = "revit";
+    revitMesh.castShadow = true;
+    revitMesh.receiveShadow = true;
+    revitMesh.visible = false;
+    object.add(revitMesh);
+
+    const scale = TARGET_SIZE / (Math.max(size.x, size.y, size.z) || 1);
+    return {
+      object,
+      scale,
+      center,
+      halfHeight: (size.y * scale) / 2,
+      layerInfo,
+      upAxis,
+      horizAxes,
+      baseDimensions: {
+        width: baseWidth0,
+        depth: baseDepth0,
+        height: baseHeight0,
+      },
+      terrainBottomAtRest,
+      terrainHeightAtRest,
+      boxMin,
+      boxMax,
+    };
+  }, [gltfs, files]);
+
+  // Compute dynamic Y bounds so the entire model assembly rests above the checkerboard bed plate
+  const { lowestY, totalHeight } = useMemo(() => {
+    const sTerrain = controls.terrain / 100;
+    const deltaY = (sTerrain - 1) * terrainHeightAtRest;
+    const h = baseDimensions.height * (controls.revitHeight / 100);
+    const revitBottom = terrainBottomAtRest - h;
+    const lowestY = controls.enableRevit
+      ? Math.min(boxMin[upAxis], revitBottom)
+      : boxMin[upAxis];
+    const highestY = boxMax[upAxis] + Math.max(0, deltaY);
+    const totalHeight = highestY - lowestY;
+    return { lowestY, totalHeight };
+  }, [
+    controls.enableRevit,
+    controls.revitHeight,
+    controls.terrain,
+    terrainHeightAtRest,
+    baseDimensions,
+    terrainBottomAtRest,
+    boxMin,
+    boxMax,
+    upAxis,
+  ]);
+
+  // Apply the Manipulate City controls, non-destructively.
+  // When the revit frame is enabled, we also run a CSG boolean subtraction:
+  // every mesh whose name starts with "boolean_cube" is carved out of the
+  // revit geometry so the frame disappears in those footprints.
   useEffect(() => {
+    // Delta vertical shift of top surface of terrain when terrain height is scaled
+    const sTerrain = controls.terrain / 100;
+    const deltaY = (sTerrain - 1) * terrainHeightAtRest;
+
     const apply = (name: string, vert: number, all: number) => {
       const layer = object.getObjectByName(name);
       const info = layerInfo.get(name);
@@ -201,7 +323,12 @@ function CityAssembly({
         const s = (a === upAxis ? vert : 1) * all;
         const anchor = a === upAxis ? info.min[a] : info.center[a];
         layer.scale[a] = s;
-        layer.position[a] = anchor * (1 - s);
+        let pos = anchor * (1 - s);
+        // Objects sitting on top of terrain shift along upAxis by deltaY so they stay on top
+        if (a === upAxis && name !== "terrain" && name !== "revit") {
+          pos += deltaY;
+        }
+        layer.position[a] = pos;
       });
     };
 
@@ -211,6 +338,138 @@ function CityAssembly({
     apply("roads", controls.roads / 100, 1);
     apply("trees", controls.trees / 100, 1);
 
+    // Hide boolean_cube layer (subtraction volume only)
+    object.children.forEach((layer) => {
+      if (layer.name.startsWith("boolean_cube")) {
+        layer.visible = false;
+      }
+    });
+    object.traverse((o) => {
+      if (o.name.startsWith("boolean_cube")) {
+        o.visible = false;
+      }
+    });
+
+    // Apply Revit base frame layer controls — with boolean_cube masking.
+    // We rebuild the revit geometry as a grid of small cells; any cell whose
+    // centre falls inside a boolean_cube bounding box is omitted.
+    const revitLayer = object.getObjectByName("revit") as THREE.Mesh | undefined;
+    if (revitLayer) {
+      revitLayer.visible = !!controls.enableRevit;
+      if (controls.enableRevit) {
+        const h = baseDimensions.height * (controls.revitHeight / 100);
+        const w = baseDimensions.width * (controls.revitWidth / 100);
+        const d = baseDimensions.depth * (controls.revitBreadth / 100);
+
+        // Ensure object local transforms are current
+        object.updateMatrixWorld(true);
+
+        // The revit frame is centred at (center.x, terrainBottomAtRest - h/2, center.z)
+        const rx = center[horizAxes[0]];
+        const ry = terrainBottomAtRest - h / 2;
+        const rz = center[horizAxes[1]];
+
+        // Create local-space cloned meshes of boolean_cube for exact 3D geometry raycasting
+        const localBoolMeshes: THREE.Mesh[] = [];
+        object.children.forEach((layer) => {
+          if (layer.name.startsWith("boolean_cube")) {
+            layer.traverse((child) => {
+              const mesh = child as THREE.Mesh;
+              if (mesh.isMesh && mesh.geometry) {
+                const localMatrix = new THREE.Matrix4().identity();
+                let curr: THREE.Object3D | null = mesh;
+                while (curr && curr !== object) {
+                  localMatrix.premultiply(curr.matrix);
+                  curr = curr.parent;
+                }
+                const cloneGeom = mesh.geometry.clone();
+                cloneGeom.applyMatrix4(localMatrix);
+                const localMesh = new THREE.Mesh(
+                  cloneGeom,
+                  new THREE.MeshBasicMaterial({ side: THREE.DoubleSide })
+                );
+                localMesh.matrixWorld.identity();
+                localBoolMeshes.push(localMesh);
+              }
+            });
+          }
+        });
+
+        // Set up Raycaster along upAxis
+        const raycaster = new THREE.Raycaster();
+        const rayDir = new THREE.Vector3();
+        rayDir[upAxis] = -1;
+
+        const rayHeight = boxMax[upAxis] + 100;
+        const rayOrigin = new THREE.Vector3();
+
+        // Build merged geometry from a grid of cells, skipping masked ones.
+        const GRID = 40;
+        const cellW = w / GRID;
+        const cellD = d / GRID;
+        const mergedGeoms: THREE.BufferGeometry[] = [];
+
+        for (let ix = 0; ix < GRID; ix++) {
+          for (let iz = 0; iz < GRID; iz++) {
+            const cx = rx - w / 2 + (ix + 0.5) * cellW;
+            const cz = rz - d / 2 + (iz + 0.5) * cellD;
+
+            // Cell is masked ONLY IF a ray cast at (cx, cz) hits local boolean_cube mesh geometry
+            let masked = false;
+            if (localBoolMeshes.length > 0) {
+              rayOrigin[upAxis] = rayHeight;
+              rayOrigin[horizAxes[0]] = cx;
+              rayOrigin[horizAxes[1]] = cz;
+
+              raycaster.set(rayOrigin, rayDir);
+              const hits = raycaster.intersectObjects(localBoolMeshes, false);
+              if (hits.length > 0) {
+                masked = true;
+              }
+            }
+
+            if (!masked) {
+              const geom = new THREE.BoxGeometry(1, 1, 1);
+              const s = new THREE.Vector3();
+              s[upAxis] = h;
+              s[horizAxes[0]] = cellW;
+              s[horizAxes[1]] = cellD;
+              geom.scale(s.x, s.y, s.z);
+
+              const p = new THREE.Vector3();
+              p[upAxis] = ry;
+              p[horizAxes[0]] = cx;
+              p[horizAxes[1]] = cz;
+              geom.translate(p.x, p.y, p.z);
+
+              mergedGeoms.push(geom);
+            }
+          }
+        }
+
+        // Merge all cell geometries into one revit mesh geometry
+        if (mergedGeoms.length > 0) {
+          const merged = mergeGeometries(mergedGeoms);
+          if (merged) {
+            merged.computeVertexNormals();
+            if (revitLayer.geometry) revitLayer.geometry.dispose();
+            revitLayer.geometry = merged;
+          }
+          mergedGeoms.forEach((g) => g.dispose());
+        } else {
+          // All cells masked — show nothing
+          if (revitLayer.geometry) revitLayer.geometry.dispose();
+          revitLayer.geometry = new THREE.BufferGeometry();
+        }
+
+        localBoolMeshes.forEach((m) => m.geometry.dispose());
+
+        // Geometry is already in world-local coords — reset mesh transform
+        revitLayer.position.set(0, 0, 0);
+        revitLayer.scale.set(1, 1, 1);
+      }
+    }
+
     const setVisible = (name: string, hidden: boolean) => {
       const layer = object.getObjectByName(name);
       if (layer) layer.visible = !hidden;
@@ -218,18 +477,28 @@ function CityAssembly({
     setVisible("roads", controls.hideRoads);
     setVisible("trees", controls.hideTrees);
     setVisible("grass", controls.hideGrass);
-  }, [object, layerInfo, upAxis, controls]);
+  }, [
+    object,
+    layerInfo,
+    upAxis,
+    horizAxes,
+    baseDimensions,
+    terrainBottomAtRest,
+    terrainHeightAtRest,
+    center,
+    controls,
+  ]);
 
   return (
     <TransformTarget
       mode={mode}
-      position={[0, halfHeight, 0]}
+      position={[0, 0, 0]}
       onTarget={onTarget}
       onTransform={onTransform}
     >
       <group
         scale={scale}
-        position={[-center.x * scale, -center.y * scale, -center.z * scale]}
+        position={[-center.x * scale, -lowestY * scale, -center.z * scale]}
       >
         <primitive object={object} />
       </group>

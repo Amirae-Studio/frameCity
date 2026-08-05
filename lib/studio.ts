@@ -99,6 +99,11 @@ export type CityControls = {
   hideRoads: boolean;
   hideTrees: boolean;
   hideGrass: boolean;
+  // Revit sub-foundation frame layer controls
+  enableRevit: boolean;
+  revitHeight: number; // frame height/thickness (% scale)
+  revitWidth: number; // frame width (% scale)
+  revitBreadth: number; // frame breadth/depth (% scale)
 };
 
 export const CITY_DEFAULTS: CityControls = {
@@ -110,4 +115,8 @@ export const CITY_DEFAULTS: CityControls = {
   hideRoads: false,
   hideTrees: false,
   hideGrass: false,
+  enableRevit: false,
+  revitHeight: 35,
+  revitWidth: 100,
+  revitBreadth: 100,
 };
