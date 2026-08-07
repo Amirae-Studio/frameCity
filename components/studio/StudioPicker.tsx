@@ -60,46 +60,54 @@ export function StudioPicker({ initialCities }: { initialCities?: StudioCity[] }
               </div>
             ) : (
               <div className="grid grid-cols-2 gap-[14px] md:grid-cols-3 lg:grid-cols-4">
-                {cities.map((c, i) => (
-                  <motion.button
-                    key={c.slug}
-                    initial={{ opacity: 0, y: 16 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.45, delay: i * 0.04, ease }}
-                    disabled={!c.available}
-                    onClick={() => setCitySlug(c.slug)}
-                    whileHover={c.available ? { y: -4 } : undefined}
-                    className={`group relative overflow-hidden rounded-xl border p-5 text-left transition-colors duration-300 ${
-                      c.available
-                        ? "border-cream/[0.14] bg-panel hover:border-[color:var(--accent)]"
-                        : "stripe-fill cursor-not-allowed border-cream/[0.08]"
-                    }`}
-                  >
-                    <div
-                      className={`font-display text-[22px] font-medium ${
-                        c.available ? "" : "text-cream/40"
+                {cities.map((c, i) => {
+                  const hasReadyLocations = c.locations.some((loc) => loc.completed !== false);
+                  const isCityAvailable = c.available && hasReadyLocations;
+                  const readyCount = c.locations.filter((loc) => loc.completed !== false).length;
+
+                  return (
+                    <motion.button
+                      key={c.slug}
+                      initial={{ opacity: 0, y: 16 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.45, delay: i * 0.04, ease }}
+                      disabled={!isCityAvailable}
+                      onClick={() => {
+                        if (isCityAvailable) setCitySlug(c.slug);
+                      }}
+                      whileHover={isCityAvailable ? { y: -4 } : undefined}
+                      className={`group relative overflow-hidden rounded-xl border p-5 text-left transition-colors duration-300 ${
+                        isCityAvailable
+                          ? "cursor-pointer border-cream/[0.14] bg-panel hover:border-[color:var(--accent)]"
+                          : "stripe-fill cursor-not-allowed border-cream/[0.08] opacity-60"
                       }`}
                     >
-                      {c.name}
-                    </div>
-                    {c.available ? (
-                      <div className="mt-1.5 font-mono text-[10px] uppercase tracking-[0.16em] text-cream/45">
-                        {c.locations.length} districts
-                        <span
-                          className="ml-2 inline-block transition-transform duration-300 group-hover:translate-x-1"
-                          style={{ color: "var(--accent)" }}
-                          aria-hidden
-                        >
-                          →
-                        </span>
+                      <div
+                        className={`font-display text-[22px] font-medium ${
+                          isCityAvailable ? "" : "text-cream/40"
+                        }`}
+                      >
+                        {c.name}
                       </div>
-                    ) : (
-                      <div className="mt-1.5 font-mono text-[9px] font-bold uppercase tracking-[0.2em] text-cream/30">
-                        In modelling
-                      </div>
-                    )}
-                  </motion.button>
-                ))}
+                      {isCityAvailable ? (
+                        <div className="mt-1.5 font-mono text-[10px] uppercase tracking-[0.16em] text-cream/45">
+                          {readyCount} district{readyCount === 1 ? "" : "s"}
+                          <span
+                            className="ml-2 inline-block transition-transform duration-300 group-hover:translate-x-1"
+                            style={{ color: "var(--accent)" }}
+                            aria-hidden
+                          >
+                            →
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="mt-1.5 font-mono text-[9px] font-bold uppercase tracking-[0.2em] text-cream/30">
+                          In modelling
+                        </div>
+                      )}
+                    </motion.button>
+                  );
+                })}
               </div>
             )}
           </motion.div>
@@ -166,7 +174,7 @@ export function StudioPicker({ initialCities }: { initialCities?: StudioCity[] }
                         >
                           {loc.name}
                         </span>
-                        {isReady ? (
+                        {/* {isReady ? (
                           <span
                             className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-mono text-[9.5px] font-semibold tracking-wider text-emerald-400 border border-emerald-500/30 bg-emerald-500/10"
                             title="Ready to print & configure"
@@ -206,7 +214,7 @@ export function StudioPicker({ initialCities }: { initialCities?: StudioCity[] }
                             </svg>
                             In Progress
                           </span>
-                        )}
+                        )} */}
                       </div>
                       <div className="mt-0.5 text-[12.5px] text-cream/55">
                         {loc.area}

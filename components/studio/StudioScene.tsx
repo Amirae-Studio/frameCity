@@ -466,8 +466,8 @@ function CityAssembly({
         // Build merged Revit geometry using 2D grid raycasting + greedy box merging.
         // Adjacent solid cells are merged into maximal rectangular boxes, producing clean,
         // straight vertical walls with zero missing chunks under bridges or unmasked regions.
-        const GRID_X = 0;
-        const GRID_Z = 0;
+        const GRID_X = 60;
+        const GRID_Z = 60;
         const cellW = w / GRID_X;
         const cellD = d / GRID_Z;
 
