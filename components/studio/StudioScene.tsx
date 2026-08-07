@@ -463,19 +463,22 @@ function CityAssembly({
         const rayHeight = boxMax[upAxis] + 100;
         const rayOrigin = new THREE.Vector3();
 
-        // Build merged geometry from a grid of cells, skipping masked ones.
-        const GRID = 40;
-        const cellW = w / GRID;
-        const cellD = d / GRID;
-        const mergedGeoms: THREE.BufferGeometry[] = [];
+        // Build merged Revit geometry using 2D grid raycasting + greedy box merging.
+        // Adjacent solid cells are merged into maximal rectangular boxes, producing clean,
+        // straight vertical walls with zero missing chunks under bridges or unmasked regions.
+        const GRID_X = 40;
+        const GRID_Z = 40;
+        const cellW = w / GRID_X;
+        const cellD = d / GRID_Z;
 
-        for (let ix = 0; ix < GRID; ix++) {
-          for (let iz = 0; iz < GRID; iz++) {
+        const mask: boolean[][] = Array.from({ length: GRID_X }, () => Array(GRID_Z).fill(false));
+
+        for (let ix = 0; ix < GRID_X; ix++) {
+          for (let iz = 0; iz < GRID_Z; iz++) {
             const cx = rx - w / 2 + (ix + 0.5) * cellW;
             const cz = rz - d / 2 + (iz + 0.5) * cellD;
 
-            // Cell is masked ONLY IF a ray cast at (cx, cz) hits local boolean_cube mesh geometry
-            let masked = false;
+            let isMasked = false;
             if (localBoolMeshes.length > 0) {
               rayOrigin[upAxis] = rayHeight;
               rayOrigin[horizAxes[0]] = cx;
@@ -484,22 +487,58 @@ function CityAssembly({
               raycaster.set(rayOrigin, rayDir);
               const hits = raycaster.intersectObjects(localBoolMeshes, false);
               if (hits.length > 0) {
-                masked = true;
+                isMasked = true;
               }
             }
+            mask[ix][iz] = !isMasked;
+          }
+        }
 
-            if (!masked) {
+        const visited: boolean[][] = Array.from({ length: GRID_X }, () => Array(GRID_Z).fill(false));
+        const mergedGeoms: THREE.BufferGeometry[] = [];
+
+        for (let ix = 0; ix < GRID_X; ix++) {
+          for (let iz = 0; iz < GRID_Z; iz++) {
+            if (mask[ix][iz] && !visited[ix][iz]) {
+              let runW = 1;
+              while (ix + runW < GRID_X && mask[ix + runW][iz] && !visited[ix + runW][iz]) {
+                runW++;
+              }
+
+              let runD = 1;
+              let canExpandZ = true;
+              while (iz + runD < GRID_Z && canExpandZ) {
+                for (let k = 0; k < runW; k++) {
+                  if (!mask[ix + k][iz + runD] || visited[ix + k][iz + runD]) {
+                    canExpandZ = false;
+                    break;
+                  }
+                }
+                if (canExpandZ) runD++;
+              }
+
+              for (let kx = 0; kx < runW; kx++) {
+                for (let kz = 0; kz < runD; kz++) {
+                  visited[ix + kx][iz + kz] = true;
+                }
+              }
+
+              const boxW = runW * cellW;
+              const boxD = runD * cellD;
+              const boxCx = rx - w / 2 + (ix + runW / 2) * cellW;
+              const boxCz = rz - d / 2 + (iz + runD / 2) * cellD;
+
               const geom = new THREE.BoxGeometry(1, 1, 1);
               const s = new THREE.Vector3();
               s[upAxis] = h;
-              s[horizAxes[0]] = cellW;
-              s[horizAxes[1]] = cellD;
+              s[horizAxes[0]] = boxW;
+              s[horizAxes[1]] = boxD;
               geom.scale(s.x, s.y, s.z);
 
               const p = new THREE.Vector3();
               p[upAxis] = ry;
-              p[horizAxes[0]] = cx;
-              p[horizAxes[1]] = cz;
+              p[horizAxes[0]] = boxCx;
+              p[horizAxes[1]] = boxCz;
               geom.translate(p.x, p.y, p.z);
 
               mergedGeoms.push(geom);

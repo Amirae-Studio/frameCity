@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { studioCities } from "@/lib/studio";
+import { fetchStudioCities } from "@/app/studio/actions";
 import { toNavUser } from "@/lib/user";
 import { StudioConfigurator } from "@/components/studio/StudioConfigurator";
 
@@ -28,8 +28,11 @@ export default async function ConfigurePage({
   if (!profile?.has_access) redirect("/studio");
 
   const params = await searchParams;
-  const city = studioCities.find((c) => c.slug === params.city && c.available);
-  const location = city?.locations.find((l) => l.slug === params.location);
+  const dbCities = await fetchStudioCities();
+  const city = dbCities.find((c) => c.slug === params.city && c.available);
+  const location = city?.locations.find(
+    (l) => l.slug === params.location && l.completed !== false
+  );
   if (!city || !location) redirect("/studio");
 
   return (
