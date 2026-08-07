@@ -11,6 +11,7 @@ export type StudioLocation = {
 export type StudioCity = {
   slug: string;
   name: string;
+  country: string;
   available: boolean;
   locations: StudioLocation[];
 };

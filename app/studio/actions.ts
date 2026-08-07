@@ -85,6 +85,7 @@ export async function fetchStudioCities(): Promise<import("@/lib/studio").Studio
   return dbCities.map((c) => ({
     slug: c.slug,
     name: c.name,
+    country: c.country || "Other",
     available: !!c.available,
     locations: places
       .filter((p) => p.city_slug === c.slug)
