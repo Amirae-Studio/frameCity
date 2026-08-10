@@ -132,7 +132,7 @@ export function StudioPicker({ initialCities }: { initialCities?: StudioCity[] }
                       </div>
                     ) : (
                       <div className="mt-2 font-mono text-[9px] font-bold uppercase tracking-[0.2em] text-cream/30">
-                        In modelling
+                        coming soon
                       </div>
                     )}
                   </motion.button>
@@ -212,7 +212,7 @@ export function StudioPicker({ initialCities }: { initialCities?: StudioCity[] }
                       </div>
                     ) : (
                       <div className="mt-1.5 font-mono text-[9px] font-bold uppercase tracking-[0.2em] text-cream/30">
-                        In modelling
+                      coming soon
                       </div>
                     )}
                   </motion.button>
