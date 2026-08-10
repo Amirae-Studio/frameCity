@@ -6,6 +6,8 @@ import { AccessGate } from "@/components/AccessGate";
 import { SignOutButton } from "@/components/SignOutButton";
 import { StudioPicker } from "@/components/studio/StudioPicker";
 
+import { fetchStudioCities } from "@/app/studio/actions";
+
 export const metadata = {
   title: "The Studio — FrameCity",
 };
@@ -25,6 +27,7 @@ export default async function StudioPage() {
     .single();
 
   const email = user.email ?? "your account";
+  const cities = await fetchStudioCities();
 
   return (
     <div className="flex min-h-dvh flex-col bg-base">
@@ -42,7 +45,7 @@ export default async function StudioPage() {
 
       <main className="flex flex-1 flex-col">
         {profile?.has_access ? (
-          <StudioPicker />
+          <StudioPicker initialCities={cities} />
         ) : (
           <div className="flex flex-1 items-center justify-center px-6 py-16">
             <AccessGate email={email} />

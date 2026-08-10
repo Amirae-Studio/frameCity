@@ -54,3 +54,48 @@ export async function getModelFiles(prefix: string): Promise<ModelFile[]> {
   });
   return out;
 }
+
+/**
+ * Fetch all cities and their places directly from Supabase database tables (`cities` and `places`).
+ */
+export async function fetchStudioCities(): Promise<import("@/lib/studio").StudioCity[]> {
+  const supabase = await createClient();
+
+  const { data: dbCities, error: cErr } = await supabase
+    .from("cities")
+    .select("*")
+    .order("display_order", { ascending: true });
+
+  if (cErr || !dbCities) {
+    console.error("Error fetching cities from DB:", cErr);
+    return [];
+  }
+
+  const { data: dbPlaces, error: pErr } = await supabase
+    .from("places")
+    .select("*")
+    .order("display_order", { ascending: true });
+
+  if (pErr) {
+    console.error("Error fetching places from DB:", pErr);
+  }
+
+  const places = dbPlaces || [];
+
+  return dbCities.map((c) => ({
+    slug: c.slug,
+    name: c.name,
+    country: c.country || "Other",
+    available: !!c.available,
+    locations: places
+      .filter((p) => p.city_slug === c.slug)
+      .map((p) => ({
+        slug: p.slug,
+        name: p.name,
+        area: p.area || "",
+        coords: p.coords || "",
+        completed: !!p.completed,
+      })),
+  }));
+}
+
