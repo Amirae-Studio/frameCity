@@ -16,6 +16,17 @@ export type StudioCity = {
   locations: StudioLocation[];
 };
 
+export type StudioBuilding = {
+  slug: string;
+  name: string;
+  country: string;
+  city_slug: string;
+  city_name: string;
+  area?: string;
+  coords?: string;
+  available: boolean;
+};
+
 // Cities are fetched dynamically from Supabase database tables (`cities` and `places`).
 export const studioCities: StudioCity[] = [];
 

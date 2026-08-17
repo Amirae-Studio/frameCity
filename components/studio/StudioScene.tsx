@@ -1,16 +1,21 @@
 "use client";
 
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
-import { Canvas } from "@react-three/fiber";
+import { Canvas, useLoader } from "@react-three/fiber";
 import {
   OrbitControls,
   TransformControls,
   Edges,
-  useGLTF,
   Html,
 } from "@react-three/drei";
 import * as THREE from "three";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader.js";
+import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
+
+const dracoLoader = new DRACOLoader();
+dracoLoader.setDecoderPath("https://www.gstatic.com/draco/versioned/decoders/1.5.5/");
 import { MM, type CityControls } from "@/lib/studio";
 import type { ModelFile } from "@/app/studio/actions";
 
@@ -146,6 +151,13 @@ function getLocalBoundingBox(node: THREE.Object3D, container: THREE.Object3D): T
   return box;
 }
 
+function isStlFile(f: ModelFile): boolean {
+  if (f.ext && f.ext.toLowerCase() === "stl") return true;
+  const lowerName = (f.name || "").toLowerCase();
+  const lowerUrl = (f.url || "").toLowerCase();
+  return lowerName.endsWith(".stl") || lowerUrl.includes(".stl");
+}
+
 function CityAssembly({
   files,
   mode,
@@ -159,7 +171,16 @@ function CityAssembly({
   onTarget: (o: THREE.Object3D | null) => void;
   onTransform: (o: THREE.Object3D) => void;
 }) {
-  const gltfs = useGLTF(files.map((f) => f.url));
+  const glbFiles = useMemo(() => files.filter((f) => !isStlFile(f)), [files]);
+  const stlFiles = useMemo(() => files.filter((f) => isStlFile(f)), [files]);
+
+  const glbUrls = useMemo(() => glbFiles.map((f) => f.url), [glbFiles]);
+  const stlUrls = useMemo(() => stlFiles.map((f) => f.url), [stlFiles]);
+
+  const gltfs = useLoader(GLTFLoader, glbUrls, (loader) => {
+    loader.setDRACOLoader(dracoLoader);
+  });
+  const stls = useLoader(STLLoader, stlUrls);
 
   const {
     object,
@@ -176,20 +197,65 @@ function CityAssembly({
     boxMax,
   } = useMemo(() => {
     const object = new THREE.Group();
-    files.forEach((file, i) => {
-      const layer = gltfs[i].scene.clone(true);
-      layer.name = file.name; // "roads", "terrain", "small-building", …
-      layer.traverse((o) => {
-        const m = o as THREE.Mesh;
-        if (m.isMesh) {
-          m.castShadow = true;
-          if (m.geometry && m.geometry.attributes.position) {
-            // Save un-deformed original position array for non-destructive vertex deformation
-            m.userData.origPosition = m.geometry.attributes.position.array.slice();
+
+    // Process GLB layers
+    glbFiles.forEach((file, i) => {
+      const gltfObj = Array.isArray(gltfs) ? gltfs[i] : gltfs;
+      if (gltfObj && gltfObj.scene) {
+        const layer = gltfObj.scene.clone(true);
+        layer.name = file.name; // "roads", "terrain", "small-building", …
+        layer.traverse((o) => {
+          const m = o as THREE.Mesh;
+          if (m.isMesh) {
+            m.castShadow = true;
+            m.receiveShadow = true;
+            if (m.geometry && m.geometry.attributes.position) {
+              m.userData.origPosition = m.geometry.attributes.position.array.slice();
+            }
+          }
+        });
+        object.add(layer);
+      }
+    });
+
+    // Process STL layers
+    stlFiles.forEach((file, i) => {
+      const geomObj = Array.isArray(stls) ? stls[i] : stls;
+      if (geomObj) {
+        const g = (geomObj as THREE.BufferGeometry).clone();
+        g.computeVertexNormals();
+        g.computeBoundingBox();
+
+        // Check if STL is Z-up (if Z height > Y and X)
+        const size = new THREE.Vector3();
+        if (g.boundingBox) {
+          g.boundingBox.getSize(size);
+          if (size.z > size.y && size.z > size.x) {
+            g.rotateX(-Math.PI / 2);
+            g.center();
+            g.computeVertexNormals();
+            g.computeBoundingBox();
           }
         }
-      });
-      object.add(layer);
+
+        const mat = new THREE.MeshStandardMaterial({
+          color: "#e9e6df",
+          roughness: 0.6,
+          metalness: 0.05,
+        });
+        const mesh = new THREE.Mesh(g, mat);
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+
+        if (g.attributes.position) {
+          mesh.userData.origPosition = g.attributes.position.array.slice();
+        }
+
+        const layer = new THREE.Group();
+        layer.name = file.name;
+        layer.add(mesh);
+        object.add(layer);
+      }
     });
 
     // Which axis is "up"? Flat layers (roads/terrain/grass) are thinnest
@@ -286,7 +352,7 @@ function CityAssembly({
       boxMin,
       boxMax,
     };
-  }, [gltfs, files]);
+  }, [glbFiles, stlFiles, gltfs, stls]);
 
   // Compute dynamic Y bounds so the entire model assembly rests above the checkerboard bed plate.
   const { lowestY, totalHeight } = useMemo(() => {

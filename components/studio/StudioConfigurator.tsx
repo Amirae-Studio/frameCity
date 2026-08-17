@@ -37,10 +37,12 @@ const RAD = 180 / Math.PI;
 const round1 = (n: number) => Math.round(n * 10) / 10;
 
 export function StudioConfigurator({
+  type = "city",
   city,
   location,
   user,
 }: {
+  type?: "city" | "building";
   city: { slug: string; name: string };
   location: { slug: string; name: string; area: string; coords: string };
   user: NavUser | null;
@@ -83,7 +85,8 @@ export function StudioConfigurator({
     setModelLoading(true);
     setModelFiles([]);
     setCityCtl(CITY_DEFAULTS);
-    getModelFiles(`${city.slug}/${location.slug}`)
+    const bucket = type === "building" ? "buildings" : "city-models";
+    getModelFiles(`${city.slug}/${location.slug}`, bucket)
       .then((files) => {
         if (cancelled) return;
         setModelFiles(files);
@@ -95,7 +98,7 @@ export function StudioConfigurator({
     return () => {
       cancelled = true;
     };
-  }, [city.slug, location.slug]);
+  }, [city.slug, location.slug, type]);
 
   const syncFromMesh = useCallback((mesh: THREE.Object3D) => {
     setTf({
