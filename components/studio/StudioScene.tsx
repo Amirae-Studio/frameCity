@@ -16,7 +16,7 @@ import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js
 
 const dracoLoader = new DRACOLoader();
 dracoLoader.setDecoderPath("https://www.gstatic.com/draco/versioned/decoders/1.5.5/");
-import { MM, type CityControls } from "@/lib/studio";
+import { MM, DEFAULT_LAYER_COLORS, type CityControls } from "@/lib/studio";
 import type { ModelFile } from "@/app/studio/actions";
 
 export type GizmoMode = "translate" | "rotate" | "scale";
@@ -642,6 +642,36 @@ function CityAssembly({
     setVisible("roads", controls.hideRoads);
     setVisible("trees", controls.hideTrees);
     setVisible("grass", controls.hideGrass);
+
+    // Apply layer colors dynamically
+    object.children.forEach((layer) => {
+      if (layer.name.startsWith("boolean_cube")) return;
+      let targetHex = "#e9e6df";
+      if (controls.enableColors) {
+        if (layer.name === "revit") {
+          targetHex = "#FFFFFF";
+        } else {
+          targetHex =
+            controls.layerColors[layer.name] ||
+            DEFAULT_LAYER_COLORS[layer.name] ||
+            "#e9e6df";
+        }
+      }
+
+      layer.traverse((o) => {
+        const m = o as THREE.Mesh;
+        if (m.isMesh && m.material) {
+          if (!m.userData.clonedMat) {
+            m.material = (m.material as THREE.Material).clone();
+            m.userData.clonedMat = true;
+          }
+          const mat = m.material as THREE.MeshStandardMaterial;
+          if (mat.color) {
+            mat.color.set(targetHex);
+          }
+        }
+      });
+    });
   }, [
     object,
     layerInfo,
