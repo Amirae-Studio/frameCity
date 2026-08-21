@@ -137,7 +137,7 @@ export const CITY_DEFAULTS: CityControls = {
   hideTrees: false,
   hideGrass: false,
   enableRevit: false,
-  revitHeight: 35,
+  revitHeight: 100,
   revitWidth: 100,
   revitBreadth: 100,
   revitUniformScale: true,

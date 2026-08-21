@@ -604,7 +604,7 @@ export function StudioConfigurator({
                         {cityCtl.enableRevit && (
                           <div className="flex flex-col gap-4 border-l border-[var(--accent)]/40 pl-3.5 pt-1">
                             <Slider
-                              label="Frame height"
+                              label={`Frame height (${(cityCtl.revitHeight / 100).toFixed(1)} cm)`}
                               value={cityCtl.revitHeight}
                               min={20}
                               max={300}

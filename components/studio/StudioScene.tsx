@@ -315,8 +315,13 @@ function CityAssembly({
       ? terrainInfo.max[upAxis] - terrainInfo.min[upAxis]
       : 0;
 
+    const scale = TARGET_SIZE / (Math.max(size.x, size.y, size.z) || 1);
+
     // Create dynamic Revit base frame mesh underneath the terrain
-    const baseHeight0 = Math.max(0.08, size[upAxis] * 0.12);
+    // 1 Three.js world unit = 50 mm = 5 cm (MM = 1 / 50).
+    // 1 cm height = 10 mm = 10 * MM = 0.2 world units.
+    // In object space, 1 cm height is (10 * MM) / scale.
+    const baseHeight0 = (10 * MM) / scale;
     const baseWidth0 = size[horizAxes[0]] || 1;
     const baseDepth0 = size[horizAxes[1]] || 1;
 
@@ -332,8 +337,6 @@ function CityAssembly({
     revitMesh.receiveShadow = true;
     revitMesh.visible = false;
     object.add(revitMesh);
-
-    const scale = TARGET_SIZE / (Math.max(size.x, size.y, size.z) || 1);
     return {
       object,
       scale,
