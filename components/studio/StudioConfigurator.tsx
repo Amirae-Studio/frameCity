@@ -4,8 +4,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { AnimatePresence, motion } from "framer-motion";
-import type * as THREE from "three";
-import { printers, MM, CITY_DEFAULTS, type CityControls } from "@/lib/studio";
+import * as THREE from "three";
+import {
+  printers,
+  MM,
+  CITY_DEFAULTS,
+  FILAMENT_LINES,
+  DEFAULT_LAYER_COLORS,
+  type CityControls,
+} from "@/lib/studio";
 import type { NavUser } from "@/lib/user";
 import { useTheme } from "@/lib/theme";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -13,6 +20,8 @@ import { getModelFiles, type ModelFile } from "@/app/studio/actions";
 import { recordDownload } from "@/app/actions/downloads";
 import { TempAccessModal } from "@/components/TempAccessModal";
 import type { GizmoMode } from "./StudioScene";
+import { exportTo3MF, collectTransformedMeshes } from "@/lib/3mfExporter";
+
 
 const StudioScene = dynamic(() => import("./StudioScene"), {
   ssr: false,
@@ -37,10 +46,12 @@ const RAD = 180 / Math.PI;
 const round1 = (n: number) => Math.round(n * 10) / 10;
 
 export function StudioConfigurator({
+  type = "city",
   city,
   location,
   user,
 }: {
+  type?: "city" | "building";
   city: { slug: string; name: string };
   location: { slug: string; name: string; area: string; coords: string };
   user: NavUser | null;
@@ -67,6 +78,16 @@ export function StudioConfigurator({
   const setCtl = <K extends keyof CityControls>(k: K, v: CityControls[K]) =>
     setCityCtl((c) => ({ ...c, [k]: v }));
 
+  const setLayerColor = useCallback((layerName: string, hex: string) => {
+    setCityCtl((c) => ({
+      ...c,
+      layerColors: {
+        ...c.layerColors,
+        [layerName]: hex,
+      },
+    }));
+  }, []);
+
   const printer = printers.find((p) => p.id === printerId)!;
 
   // Only offer controls for layers that actually exist in this tile's folder.
@@ -74,6 +95,28 @@ export function StudioConfigurator({
     () => new Set(modelFiles.map((f) => f.name)),
     [modelFiles]
   );
+
+  const availableColorLayers = useMemo(() => {
+    const list: { key: string; label: string }[] = [];
+    if (layerSet.has("trees")) list.push({ key: "trees", label: "Trees" });
+    if (layerSet.has("terrain")) list.push({ key: "terrain", label: "Terrain" });
+    if (layerSet.has("grass")) list.push({ key: "grass", label: "Grass" });
+    if (layerSet.has("small-building")) list.push({ key: "small-building", label: "Small Buildings" });
+    if (layerSet.has("main-building")) list.push({ key: "main-building", label: "Main Building" });
+    if (layerSet.has("roads")) list.push({ key: "roads", label: "Roads" });
+    return list;
+  }, [layerSet]);
+
+  const [activeColorTab, setActiveColorTab] = useState<string>("trees");
+
+  useEffect(() => {
+    if (
+      availableColorLayers.length > 0 &&
+      !availableColorLayers.some((l) => l.key === activeColorTab)
+    ) {
+      setActiveColorTab(availableColorLayers[0].key);
+    }
+  }, [availableColorLayers, activeColorTab]);
 
   // List + sign every GLB layer in this location's folder (terrain, roads,
   // buildings, …). Nothing is mounted in the scene until this settles — no
@@ -83,7 +126,8 @@ export function StudioConfigurator({
     setModelLoading(true);
     setModelFiles([]);
     setCityCtl(CITY_DEFAULTS);
-    getModelFiles(`${city.slug}/${location.slug}`)
+    const bucket = type === "building" ? "buildings" : "city-models";
+    getModelFiles(`${city.slug}/${location.slug}`, bucket)
       .then((files) => {
         if (cancelled) return;
         setModelFiles(files);
@@ -95,7 +139,7 @@ export function StudioConfigurator({
     return () => {
       cancelled = true;
     };
-  }, [city.slug, location.slug]);
+  }, [city.slug, location.slug, type]);
 
   const syncFromMesh = useCallback((mesh: THREE.Object3D) => {
     setTf({
@@ -146,39 +190,67 @@ export function StudioConfigurator({
       return;
     }
 
-    try {
-      const { STLExporter } = await import(
-        "three/examples/jsm/exporters/STLExporter.js"
-      );
-      mesh.updateWorldMatrix(true, false);
-      // STLExporter ignores `visible`, so temporarily detach hidden layers
-      // (e.g. roads when "Hide roads" is on) to keep them out of the print.
-      const hidden: { parent: THREE.Object3D; child: THREE.Object3D }[] = [];
-      mesh.traverse((o) => {
-        if (!o.visible && o.parent) hidden.push({ parent: o.parent, child: o });
-      });
-      hidden.forEach((h) => h.parent.remove(h.child));
-      const data = new STLExporter().parse(mesh, { binary: true });
-      hidden.forEach((h) => h.parent.add(h.child));
-      const buffer = (data as DataView).buffer as ArrayBuffer;
-      const blob = new Blob([buffer], { type: "model/stl" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `framecity-${city.slug}-${location.slug}.stl`;
-      a.click();
-      URL.revokeObjectURL(url);
+    const useColors = cityCtl.enableColors;
 
-      if (res.tier === "explorer" && res.remaining !== undefined) {
-        setDownloadNotice(
-          `Download recorded! ${res.remaining} downloads remaining this month.`
-        );
+    try {
+      if (useColors) {
+        // ── 3MF export (colored) ─────────────────────────────────────────
+        // exportTo3MF walks the full hierarchy, applies world-space transforms
+        // per-mesh, and skips invisible objects — no position reset needed.
+        const blob = exportTo3MF(mesh);
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `framecity-${city.slug}-${location.slug}.3mf`;
+        a.click();
+        URL.revokeObjectURL(url);
+
+        if (res.tier === "explorer" && res.remaining !== undefined) {
+          setDownloadNotice(
+            `Download recorded! ${res.remaining} downloads remaining this month. (3MF with colors)`
+          );
+        } else {
+          setDownloadNotice("Download recorded! 3MF file ready — colors included.");
+        }
       } else {
-        setDownloadNotice("Download recorded! STL file ready.");
+        // ── STL export (no colors) ───────────────────────────────────────
+        const { STLExporter } = await import(
+          "three/examples/jsm/exporters/STLExporter.js"
+        );
+        const entries = collectTransformedMeshes(mesh);
+        if (entries.length === 0) {
+          throw new Error("No visible meshes found to export.");
+        }
+
+        const exportGroup = new THREE.Group();
+        entries.forEach((entry) => {
+          const exportMesh = new THREE.Mesh(entry.geometry);
+          exportGroup.add(exportMesh);
+        });
+
+        const data = new STLExporter().parse(exportGroup, { binary: true });
+        entries.forEach((e) => e.geometry.dispose());
+
+        const buffer = (data as DataView).buffer as ArrayBuffer;
+        const blob = new Blob([buffer], { type: "model/stl" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `framecity-${city.slug}-${location.slug}.stl`;
+        a.click();
+        URL.revokeObjectURL(url);
+
+        if (res.tier === "explorer" && res.remaining !== undefined) {
+          setDownloadNotice(
+            `Download recorded! ${res.remaining} downloads remaining this month.`
+          );
+        } else {
+          setDownloadNotice("Download recorded! STL file ready.");
+        }
       }
     } catch (err) {
       console.error("Export error:", err);
-      alert("Failed to generate STL file.");
+      alert(`Failed to generate ${useColors ? "3MF" : "STL"} file.`);
     } finally {
       setIsExporting(false);
     }
@@ -308,6 +380,7 @@ export function StudioConfigurator({
             onClick={downloadStl}
             disabled={isExporting}
             className="group flex items-center gap-2 rounded-full bg-cream px-5 py-[10px] text-[13px] text-[var(--color-base)] transition-transform duration-300 hover:scale-[1.03] disabled:opacity-50"
+            title={cityCtl.enableColors ? "Download as 3MF (with colors)" : "Download as STL"}
           >
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden>
               <path
@@ -318,7 +391,11 @@ export function StudioConfigurator({
                 strokeLinejoin="round"
               />
             </svg>
-            {isExporting ? "Exporting…" : "Download"}
+            {isExporting
+              ? "Exporting…"
+              : cityCtl.enableColors
+              ? "Download 3MF"
+              : "Download"}
           </button>
         </div>
       </header>
@@ -527,7 +604,7 @@ export function StudioConfigurator({
                         {cityCtl.enableRevit && (
                           <div className="flex flex-col gap-4 border-l border-[var(--accent)]/40 pl-3.5 pt-1">
                             <Slider
-                              label="Frame height"
+                              label={`Frame height (${(cityCtl.revitHeight / 100).toFixed(1)} cm)`}
                               value={cityCtl.revitHeight}
                               min={20}
                               max={300}
@@ -598,12 +675,97 @@ export function StudioConfigurator({
             )}
           </AnimatePresence>
 
-          <div className="mt-5 flex items-center justify-between border-t border-cream/[0.09] pt-4 opacity-50">
-            <SectionLabel no="04" label="Materials" flush muted />
-            <span className="rounded-full border border-cream/[0.2] px-2 py-[3px] font-mono text-[8.5px] font-bold uppercase tracking-[0.18em] text-cream/45">
-              Soon
-            </span>
-          </div>
+          {type !== "building" && (
+            <div className="mt-5 border-t border-cream/[0.09] pt-4">
+              <div className="mb-3 flex items-center justify-between">
+                <SectionLabel no="04" label="Filament Colors" flush />
+                <Toggle
+                  label="Add Colors"
+                  on={cityCtl.enableColors}
+                  onChange={(v) => setCtl("enableColors", v)}
+                />
+              </div>
+
+              <AnimatePresence initial={false}>
+                {cityCtl.enableColors && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: "auto", opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
+                    className="flex flex-col gap-3 overflow-hidden pt-2"
+                  >
+                    {/* Layer selector tabs */}
+                    {availableColorLayers.length > 1 && (
+                      <div className="grid grid-cols-2 gap-1.5 rounded-xl border border-cream/[0.14] p-1.5 bg-cream/[0.03]">
+                        {availableColorLayers.map((l) => {
+                          const active = l.key === activeColorTab;
+                          return (
+                            <button
+                              key={l.key}
+                              type="button"
+                              onClick={() => setActiveColorTab(l.key)}
+                              className={`rounded-lg py-1.5 px-2.5 text-center font-mono text-[10.5px] font-bold uppercase tracking-wider transition-all duration-200 truncate ${
+                                active
+                                  ? "bg-cream text-[var(--color-base)] shadow-md scale-[1.01]"
+                                  : "text-cream/65 hover:text-cream hover:bg-cream/[0.06]"
+                              }`}
+                            >
+                              {l.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {/* Active Layer Filament Color Card */}
+                    {activeColorTab === "trees" && layerSet.has("trees") && (
+                      <FilamentColorCard
+                        title="TREES COLOUR"
+                        value={cityCtl.layerColors.trees || DEFAULT_LAYER_COLORS.trees}
+                        onChange={(hex) => setLayerColor("trees", hex)}
+                      />
+                    )}
+                    {activeColorTab === "terrain" && layerSet.has("terrain") && (
+                      <FilamentColorCard
+                        title="TERRAIN COLOUR"
+                        value={cityCtl.layerColors.terrain || DEFAULT_LAYER_COLORS.terrain}
+                        onChange={(hex) => setLayerColor("terrain", hex)}
+                      />
+                    )}
+                    {activeColorTab === "grass" && layerSet.has("grass") && (
+                      <FilamentColorCard
+                        title="GRASS COLOUR"
+                        value={cityCtl.layerColors.grass || DEFAULT_LAYER_COLORS.grass}
+                        onChange={(hex) => setLayerColor("grass", hex)}
+                      />
+                    )}
+                    {activeColorTab === "small-building" && layerSet.has("small-building") && (
+                      <FilamentColorCard
+                        title="SMALL BUILDINGS COLOUR"
+                        value={cityCtl.layerColors["small-building"] || DEFAULT_LAYER_COLORS["small-building"]}
+                        onChange={(hex) => setLayerColor("small-building", hex)}
+                      />
+                    )}
+                    {activeColorTab === "main-building" && layerSet.has("main-building") && (
+                      <FilamentColorCard
+                        title="MAIN BUILDING COLOUR"
+                        value={cityCtl.layerColors["main-building"] || DEFAULT_LAYER_COLORS["main-building"]}
+                        onChange={(hex) => setLayerColor("main-building", hex)}
+                      />
+                    )}
+                    {activeColorTab === "roads" && layerSet.has("roads") && (
+                      <FilamentColorCard
+                        title="ROADS COLOUR"
+                        value={cityCtl.layerColors.roads || DEFAULT_LAYER_COLORS.roads}
+                        onChange={(hex) => setLayerColor("roads", hex)}
+                      />
+                    )}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          )}
         </aside>
       </div>
     </div>
@@ -894,5 +1056,80 @@ function ScaleIcon() {
         fill="currentColor"
       />
     </svg>
+  );
+}
+
+function FilamentColorCard({
+  title,
+  value,
+  onChange,
+}: {
+  title: string;
+  value: string;
+  onChange: (hex: string) => void;
+}) {
+  const selectedInfo = useMemo(() => {
+    for (const group of FILAMENT_LINES) {
+      for (const [name, hex] of Object.entries(group.colors)) {
+        if (hex.toLowerCase() === value.toLowerCase()) {
+          return { name, hex: hex.toUpperCase(), line: group.line };
+        }
+      }
+    }
+    return { name: "Jade White", hex: "#FFFFFF", line: "PLA Basic" };
+  }, [value]);
+
+  return (
+    <div
+      className="rounded-[20px] border border-[#E6E1D5] p-4 shadow-xl transition-all duration-200"
+      style={{ backgroundColor: "#FDFBF7", color: "#161D18" }}
+    >
+      <div
+        className="mb-2.5 font-mono text-[11.5px] font-extrabold uppercase tracking-[0.2em]"
+        style={{ color: "#161D18" }}
+      >
+        {title}
+      </div>
+
+      {FILAMENT_LINES.map((group, groupIdx) => (
+        <div key={group.line} className={groupIdx > 0 ? "mt-3.5" : ""}>
+          <div
+            className="mb-2 font-mono text-[9px] font-bold uppercase tracking-[0.18em]"
+            style={{ color: "#637067" }}
+          >
+            BAMBU {group.line}
+          </div>
+          <div className="grid grid-cols-7 gap-1.5 sm:gap-2">
+            {Object.entries(group.colors).map(([colorName, hex]) => {
+              const isSelected = hex.toLowerCase() === value.toLowerCase();
+              return (
+                <button
+                  key={colorName}
+                  type="button"
+                  title={`${colorName} (${hex})`}
+                  onClick={() => onChange(hex)}
+                  className={`relative h-6.5 w-6.5 sm:h-7 sm:w-7 rounded-[8px] border transition-transform duration-150 active:scale-90 hover:scale-110 ${
+                    isSelected
+                      ? "ring-2 ring-[#161D18] ring-offset-2 ring-offset-[#FDFBF7] z-10 scale-105"
+                      : "border-black/15 opacity-90 hover:opacity-100"
+                  }`}
+                  style={{ backgroundColor: hex }}
+                />
+              );
+            })}
+          </div>
+        </div>
+      ))}
+
+      <div
+        className="mt-3.5 border-t border-dashed pt-2.5 font-mono text-[12px] font-bold flex items-center justify-between"
+        style={{ borderColor: "#E0DACC", color: "#161D18" }}
+      >
+        <span>{selectedInfo.name}</span>
+        <span className="text-[10.5px] font-semibold" style={{ color: "#637067" }}>
+          {selectedInfo.hex}
+        </span>
+      </div>
+    </div>
   );
 }
