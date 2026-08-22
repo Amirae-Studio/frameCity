@@ -105,7 +105,17 @@ export const DEFAULT_LAYER_COLORS: Record<string, string> = {
   roads: "#FFFFFF", // Dark Gray
 };
 
-// Live "Manipulate city" values (percentages + layer visibility + colors).
+export type LightingPreset =
+  | "natural"   // Realistic Architectural Natural Sunlight (like isometric room renders)
+  | "studio"    // Crisp Neutral Studio Daylight
+  | "golden"    // Golden Hour Sunset
+  | "cyberpunk" // Neon Cyan & Magenta
+  | "dramatic"  // Dramatic Spotlight
+  | "warm";     // Cozy Interior Warm Glow
+
+export type EnvironmentBackdrop = "architectural" | "dark" | "slate" | "default";
+
+// Live "Manipulate city" values (percentages + layer visibility + colors + lighting).
 export type CityControls = {
   small: number; // small-building · vertical only
   large: number; // main-building · all axes
@@ -125,6 +135,14 @@ export type CityControls = {
   // Filament Color customization
   enableColors: boolean;
   layerColors: Record<string, string>;
+  // Studio Lighting Setup
+  enableLighting: boolean;
+  lightingPreset: LightingPreset;
+  lightIntensity: number; // 20 - 300%
+  sunRotation: number; // 0 - 360 degrees (heading)
+  sunElevation: number; // 10 - 80 degrees (pitch / height in sky)
+  shadowSoftness: boolean;
+  environmentBackdrop: EnvironmentBackdrop;
 };
 
 export const CITY_DEFAULTS: CityControls = {
@@ -144,5 +162,12 @@ export const CITY_DEFAULTS: CityControls = {
   revitUniform: 100,
   enableColors: false,
   layerColors: { ...DEFAULT_LAYER_COLORS },
+  enableLighting: false,
+  lightingPreset: "natural",
+  lightIntensity: 120,
+  sunRotation: 55,
+  sunElevation: 30,
+  shadowSoftness: true,
+  environmentBackdrop: "architectural",
 };
 

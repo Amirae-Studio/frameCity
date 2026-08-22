@@ -743,6 +743,114 @@ function Loader() {
   );
 }
 
+function StudioLighting({ controls }: { controls: CityControls }) {
+  const isCustom = controls.enableLighting;
+  const intensityMult = isCustom ? controls.lightIntensity / 100 : 1.0;
+  const sunRotationRad = ((isCustom ? controls.sunRotation : 55) * Math.PI) / 180;
+  const sunElevationRad = ((isCustom ? controls.sunElevation : 30) * Math.PI) / 180;
+  const radius = 12;
+
+  // Spherical celestial coordinates: elevation pitch + rotation heading
+  const sunY = Math.max(1.5, radius * Math.sin(sunElevationRad));
+  const sunHoriz = radius * Math.cos(sunElevationRad);
+  const sunX = sunHoriz * Math.cos(sunRotationRad);
+  const sunZ = sunHoriz * Math.sin(sunRotationRad);
+
+  const preset = isCustom ? controls.lightingPreset : "natural";
+  let keyColor = "#fff1d6";
+  let rimColor = "#b8d2fe";
+  let fillColor = "#f5ebd6";
+  let ambientColor = "#e8f0fe";
+  let keyIntensity = 2.4 * intensityMult;
+  let rimIntensity = 0.8 * intensityMult;
+  let fillIntensity = 0.6 * intensityMult;
+  let ambientIntensity = 0.45 * intensityMult;
+
+  if (preset === "natural") {
+    // Realistic Architectural Natural Sunlight (like isometric room renders)
+    keyColor = "#fff3df";      // Warm sunlight rays
+    rimColor = "#b3d1ff";      // Soft atmospheric sky bounce
+    fillColor = "#f4ebd8";     // Warm floor contact bounce
+    ambientColor = "#e3ecfa";   // Diffuse sky fill
+    keyIntensity = 2.5 * intensityMult;
+    rimIntensity = 0.85 * intensityMult;
+    fillIntensity = 0.65 * intensityMult;
+    ambientIntensity = 0.45 * intensityMult;
+  } else if (preset === "studio") {
+    keyColor = "#ffffff";
+    rimColor = "#c8cede";
+    fillColor = "#e8d9c4";
+    ambientColor = "#ffffff";
+    keyIntensity = 1.9 * intensityMult;
+    rimIntensity = 0.6 * intensityMult;
+    fillIntensity = 0.45 * intensityMult;
+    ambientIntensity = 0.5 * intensityMult;
+  } else if (preset === "golden") {
+    keyColor = "#ff9e2c";
+    rimColor = "#3b6eff";
+    fillColor = "#ffcf96";
+    ambientColor = "#ffd8a8";
+    keyIntensity = 2.7 * intensityMult;
+    rimIntensity = 1.0 * intensityMult;
+    fillIntensity = 0.55 * intensityMult;
+    ambientIntensity = 0.38 * intensityMult;
+  } else if (preset === "cyberpunk") {
+    keyColor = "#00f0ff";
+    rimColor = "#ff007f";
+    fillColor = "#8a00ff";
+    ambientColor = "#220044";
+    keyIntensity = 2.6 * intensityMult;
+    rimIntensity = 1.6 * intensityMult;
+    fillIntensity = 0.8 * intensityMult;
+    ambientIntensity = 0.35 * intensityMult;
+  } else if (preset === "dramatic") {
+    keyColor = "#ffffff";
+    rimColor = "#555566";
+    fillColor = "#222233";
+    ambientColor = "#111122";
+    keyIntensity = 3.2 * intensityMult;
+    rimIntensity = 0.4 * intensityMult;
+    fillIntensity = 0.2 * intensityMult;
+    ambientIntensity = 0.15 * intensityMult;
+  } else if (preset === "warm") {
+    keyColor = "#ffc288";
+    rimColor = "#ffd6aa";
+    fillColor = "#ffae70";
+    ambientColor = "#fff3e0";
+    keyIntensity = 1.8 * intensityMult;
+    rimIntensity = 0.7 * intensityMult;
+    fillIntensity = 0.5 * intensityMult;
+    ambientIntensity = 0.65 * intensityMult;
+  }
+
+  const shadowMapSize = isCustom && !controls.shadowSoftness ? 2048 : 1024;
+  const shadowBias = isCustom && !controls.shadowSoftness ? -0.0001 : -0.0003;
+
+  return (
+    <>
+      <ambientLight intensity={ambientIntensity} color={ambientColor} />
+      <directionalLight
+        position={[sunX, sunY, sunZ]}
+        intensity={keyIntensity}
+        color={keyColor}
+        castShadow
+        shadow-mapSize={[shadowMapSize, shadowMapSize]}
+        shadow-bias={shadowBias}
+      />
+      <directionalLight
+        position={[-sunX, Math.max(2, sunY * 0.5), -sunZ]}
+        intensity={rimIntensity}
+        color={rimColor}
+      />
+      <directionalLight
+        position={[0, 2, -8]}
+        intensity={fillIntensity}
+        color={fillColor}
+      />
+    </>
+  );
+}
+
 export default function StudioScene({
   bedW,
   bedD,
@@ -771,16 +879,7 @@ export default function StudioScene({
       camera={{ position: [7, 5.5, 9], fov: 40 }}
       gl={{ antialias: true, preserveDrawingBuffer: true }}
     >
-      <ambientLight intensity={0.5} />
-      <directionalLight
-        position={[6, 9, 4]}
-        intensity={1.9}
-        castShadow
-        shadow-mapSize={[1024, 1024]}
-        shadow-bias={-0.0002}
-      />
-      <directionalLight position={[-6, 4, -5]} intensity={0.6} color="#c8cede" />
-      <directionalLight position={[0, 2, -8]} intensity={0.45} color="#e8d9c4" />
+      <StudioLighting controls={cityControls} />
 
       <Bed w={bedW} d={bedD} light={light} />
 

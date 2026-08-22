@@ -12,6 +12,7 @@ import {
   FILAMENT_LINES,
   DEFAULT_LAYER_COLORS,
   type CityControls,
+  type LightingPreset,
 } from "@/lib/studio";
 import type { NavUser } from "@/lib/user";
 import { useTheme } from "@/lib/theme";
@@ -766,6 +767,104 @@ export function StudioConfigurator({
               </AnimatePresence>
             </div>
           )}
+
+          {/* Studio Lighting Setup Controls */}
+          <div className="mt-5 border-t border-cream/[0.09] pt-4">
+            <div className="mb-3 flex items-center justify-between">
+              <SectionLabel no="05" label="Studio Lighting" flush />
+              <Toggle
+                label="Lighting Setup"
+                on={cityCtl.enableLighting}
+                onChange={(v) => setCtl("enableLighting", v)}
+              />
+            </div>
+
+            <AnimatePresence initial={false}>
+              {cityCtl.enableLighting && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: "auto", opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
+                  className="flex flex-col gap-4 overflow-hidden pt-2"
+                >
+                  {/* Lighting Presets */}
+                  <div>
+                    <span className="mb-2 block font-mono text-[10px] font-bold uppercase tracking-wider text-cream/65">
+                      Lighting Ambience Mode
+                    </span>
+                    <div className="grid grid-cols-2 gap-2">
+                      {[
+                        { id: "natural", label: "🌤️ Real Sunlight", desc: "Natural architectural rays" },
+                        { id: "studio", label: "☀️ Studio Neutral", desc: "Crisp neutral daylight" },
+                        { id: "golden", label: "🌅 Golden Hour", desc: "Warm sunset glow" },
+                        { id: "cyberpunk", label: "🌆 Cyberpunk", desc: "Neon cyan & magenta" },
+                        { id: "dramatic", label: "🎬 Dramatic", desc: "High contrast spotlight" },
+                        { id: "warm", label: "🕯️ Warm Glow", desc: "Cozy interior warmth" },
+                      ].map((p) => {
+                        const active = cityCtl.lightingPreset === p.id;
+                        return (
+                          <button
+                            key={p.id}
+                            type="button"
+                            onClick={() => setCtl("lightingPreset", p.id as LightingPreset)}
+                            className={`flex flex-col items-start rounded-xl border p-2.5 text-left transition-all duration-200 ${
+                              active
+                                ? "border-[color:var(--accent)] bg-[color:var(--accent)]/15 shadow-md scale-[1.01]"
+                                : "border-cream/15 bg-cream/[0.03] text-cream/70 hover:border-cream/30 hover:bg-cream/[0.06]"
+                            }`}
+                          >
+                            <span className="font-mono text-[10.5px] font-bold text-cream">
+                              {p.label}
+                            </span>
+                            <span className="text-[9.5px] text-cream/50">
+                              {p.desc}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Brightness, Sun Elevation & Sun Rotation Sliders */}
+                  <div className="flex flex-col gap-3.5 rounded-xl border border-cream/10 p-3 bg-cream/[0.02]">
+                    <Slider
+                      label="Light Intensity"
+                      value={cityCtl.lightIntensity}
+                      min={20}
+                      max={300}
+                      suffix="%"
+                      onChange={(v) => setCtl("lightIntensity", v)}
+                    />
+
+                    <Slider
+                      label={`Sun Height / Pitch (${cityCtl.sunElevation}°)`}
+                      value={cityCtl.sunElevation}
+                      min={10}
+                      max={80}
+                      suffix="°"
+                      onChange={(v) => setCtl("sunElevation", v)}
+                    />
+
+                    <Slider
+                      label={`Sun Direction Angle (${cityCtl.sunRotation}°)`}
+                      value={cityCtl.sunRotation}
+                      min={0}
+                      max={360}
+                      suffix="°"
+                      onChange={(v) => setCtl("sunRotation", v)}
+                    />
+
+                    <Toggle
+                      label="Soft Architectural Shadows"
+                      on={cityCtl.shadowSoftness}
+                      onChange={(v) => setCtl("shadowSoftness", v)}
+                    />
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
         </aside>
       </div>
     </div>
