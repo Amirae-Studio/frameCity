@@ -652,7 +652,10 @@ function CityAssembly({
       let targetHex = "#e9e6df";
       if (controls.enableColors) {
         if (layer.name === "revit") {
-          targetHex = "#FFFFFF";
+          targetHex =
+            controls.layerColors.terrain ||
+            DEFAULT_LAYER_COLORS.terrain ||
+            "#545454";
         } else {
           targetHex =
             controls.layerColors[layer.name] ||
