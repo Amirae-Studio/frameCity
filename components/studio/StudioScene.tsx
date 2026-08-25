@@ -322,8 +322,8 @@ function CityAssembly({
     // 1 cm height = 10 mm = 10 * MM = 0.2 world units.
     // In object space, 1 cm height is (10 * MM) / scale.
     const baseHeight0 = (10 * MM) / scale;
-    const baseWidth0 = size[horizAxes[0]] || 1;
-    const baseDepth0 = size[horizAxes[1]] || 1;
+    const baseWidth0 = (size[horizAxes[0]] || 1) + (20 * MM) / scale;
+    const baseDepth0 = (size[horizAxes[1]] || 1) + (20 * MM) / scale;
 
     const revitGeom = new THREE.BoxGeometry(1, 1, 1);
     const revitMat = new THREE.MeshStandardMaterial({

@@ -32,7 +32,7 @@ export function Footer() {
         <div className="max-w-[300px]">
           <Logo className="theme-logo mb-5 h-9" />
           <p className="m-0 text-[13.5px] leading-[1.7] text-cream/50">
-            Refined 3D city models, modelled mostly by hand and framed by hand.
+            Refined 3D city models, modelled and framed by hand.
           </p>
         </div>
         <div className="flex flex-wrap gap-16">
