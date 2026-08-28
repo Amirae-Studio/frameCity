@@ -58,7 +58,7 @@ export function Configurator() {
             Browse, drop a pin, print &amp; frame.
           </h2>
           <p className="m-0 text-[15px] leading-[1.7] text-cream/[0.62]">
-            Pick any city in the library, frame the exact block you love, confiure to your vision.
+            Pick any city in the library, frame the exact block you love, configure to your vision.
           </p>
         </Reveal>
       </div>
