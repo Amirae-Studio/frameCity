@@ -611,7 +611,7 @@ export function StudioConfigurator({
                               suffix="%"
                               onChange={(v) => setCtl("revitHeight", v)}
                             />
-                            {/* Uniform vs Independent toggle for width/breadth */}
+                            {/* Uniform vs Independent toggle for    width/breadth */}
                             <div className="flex items-center justify-between">
                               <span className="text-[11.5px] text-cream/60">Uniform W+D</span>
                               <button
