@@ -45,7 +45,7 @@ export function Hero() {
           className="mb-6 font-mono text-[11px] font-bold uppercase tracking-[0.32em] md:mb-7"
           style={{ color: "var(--accent)" }}
         >
-          The world&apos;s skylines · framed
+          {/* The world&apos;s skylines · framed */}
         </motion.div>
 
         <motion.h1

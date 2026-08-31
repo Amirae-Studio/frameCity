@@ -17,6 +17,7 @@ export function Nav({ initialUser }: { initialUser: NavUser | null }) {
   const links = [
     { label: "Collection", href: isHome ? "#collection" : "/#collection" },
     { label: "Craft", href: isHome ? "#craft" : "/#craft" },
+    { label: "Milestones", href: isHome ? "#milestones" : "/#milestones" },
     { label: "Create", href: isHome ? "#create" : "/#create" },
     { label: "Gallery", href: "/gallery" },
     { label: "Support", href: isHome ? "#support" : "/#support" },
@@ -40,7 +41,9 @@ export function Nav({ initialUser }: { initialUser: NavUser | null }) {
       transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
       className="sticky top-0 z-50 flex items-center justify-between border-b border-cream/[0.09] bg-base/70 px-6 py-[18px] backdrop-blur-xl md:px-[52px] md:py-[22px]"
     >
-      <Logo className="theme-logo h-8 md:h-9" priority />
+      <a href="/" aria-label="FrameCity Home" className="no-underline flex items-center">
+        <Logo className="theme-logo h-8 md:h-9" priority />
+      </a>
 
       <nav className="hidden gap-9 text-[13.5px] text-cream/70 md:flex">
         {links.map((l) => (

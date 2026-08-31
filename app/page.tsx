@@ -5,6 +5,7 @@ import { Collection } from "@/components/Collection";
 import { Film } from "@/components/Film";
 import { Craft } from "@/components/Craft";
 import { ModelShowcase } from "@/components/ModelShowcase";
+import { Milestones } from "@/components/Milestones";
 import { Configurator } from "@/components/Configurator";
 import { Support } from "@/components/Support";
 import { Footer } from "@/components/Footer";
@@ -27,6 +28,7 @@ export default async function Home() {
         <Collection />
         <Craft />
         <ModelShowcase />
+        <Milestones />
         <Configurator />
         <Support />
       </main>

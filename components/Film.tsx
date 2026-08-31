@@ -34,12 +34,12 @@ export function Film() {
     <section id="film" className="border-t border-cream/[0.09] px-6 py-[80px] md:px-[52px] md:py-[100px]">
       <div className="mx-auto mb-[46px] max-w-[640px] text-center">
         <Reveal>
-          <div
+          {/* <div
             className="mb-[18px] font-mono text-[11px] font-bold uppercase tracking-[0.3em]"
             style={{ color: "var(--accent)" }}
           >
             Inside the studio
-          </div>
+          </div> */}
           <h2 className="m-0 mb-4 font-display text-[34px] font-normal leading-[1.03] md:text-[48px]">
             Every city is planned, modelled and tested — one part at a time.
           </h2>

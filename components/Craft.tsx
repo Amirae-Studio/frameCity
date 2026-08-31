@@ -25,12 +25,12 @@ export function Craft() {
 
         <div>
           <Reveal>
-            <div
+            {/* <div
               className="mb-5 font-mono text-[11px] font-bold uppercase tracking-[0.3em]"
               style={{ color: "var(--accent)" }}
             >
               How it&apos;s made
-            </div>
+            </div> */}
             <h2 className="m-0 mb-5 font-display text-[34px] font-normal leading-[1.05] md:text-[46px]">
               Modelled by hand,
               <br />
