@@ -31,14 +31,14 @@ export function Footer() {
       <div className="relative z-10 flex flex-wrap justify-between gap-12">
         <div className="max-w-[300px]">
           <Logo className="theme-logo mb-5 h-9" />
-          <p className="m-0 text-[13.5px] leading-[1.7] text-cream/50">
+          <p className="m-0 text-[13.5px] leading-[1.7] text-cream/70">
             Refined 3D city models, modelled and framed by hand.
           </p>
         </div>
         <div className="flex flex-wrap gap-16">
           {columns.map((col) => (
             <div key={col.title} className="flex flex-col gap-3">
-              <div className="mb-1 font-mono text-[10px] font-bold uppercase tracking-[0.24em] text-cream/45">
+              <div className="mb-1 font-mono text-[10px] font-bold uppercase tracking-[0.24em] text-cream/70">
                 {col.title}
               </div>
               {col.links.map((l) => (
@@ -54,7 +54,7 @@ export function Footer() {
           ))}
         </div>
       </div>
-      <div className="relative z-10 mt-14 flex flex-wrap justify-between gap-[14px] border-t border-cream/10 pt-6 font-mono text-[12px] text-cream/40">
+      <div className="relative z-10 mt-14 flex flex-wrap justify-between gap-[14px] border-t border-cream/10 pt-6 font-mono text-[12px] text-cream/70">
         <span>© 2026 FrameCity Studio</span>
         <span>Cities, kept calm.</span>
       </div>

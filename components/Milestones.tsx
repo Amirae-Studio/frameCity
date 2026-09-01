@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Reveal } from "./Reveal";
+import { createClient } from "@/lib/supabase/client";
 
 type Milestone = {
   id: string;
@@ -11,12 +12,12 @@ type Milestone = {
   title: string;
   description: string;
   status: "Unlocked" | "In Progress" | "Locked";
-  image: string;
   delivery: string;
   included: string;
 };
 
-const milestones: Milestone[] = [
+// Hardcoded initial configuration, dynamic calculation will override status
+const DEFAULT_MILESTONES: Milestone[] = [
   {
     id: "m1",
     goal: "USD 5,000",
@@ -24,11 +25,9 @@ const milestones: Milestone[] = [
     title: "Community City Vote",
     description:
       "We open the floor. Backers vote on the next wave of cities to hand-model, and the winners get added to the library — free for everyone at Architect tier and above.",
-    status: "Unlocked",
-    image:
-      "/sl1.webp",
+    status: "Locked",
     delivery: "2026/09/30 UTC",
-    included: "· All Stretch Goals",
+    included: "All Stretch Goals",
   },
   {
     id: "m2",
@@ -37,11 +36,9 @@ const milestones: Milestone[] = [
     title: "Print Individual Buildings",
     description:
       "Pull any single landmark out of its district and print it on its own. Want just the tower, just the cathedral, or your office block? Every building stands alone.",
-    status: "Unlocked",
-    image:
-      "/sl2.webp",
+    status: "Locked",
     delivery: "2026/09/30 UTC",
-    included: "· All Stretch Goals",
+    included: "All Stretch Goals",
   },
   {
     id: "m3",
@@ -50,11 +47,9 @@ const milestones: Milestone[] = [
     title: "Full Color Control",
     description:
       "Color every layer independently — water, trees, grass, terrain, and the buildings themselves. Print in mono or bring your whole city to life, section by section.",
-    status: "Unlocked",
-    image:
-      "/sl3.webp",
+    status: "Locked",
     delivery: "2026/09/30 UTC",
-    included: "· All Stretch Goals",
+    included: "All Stretch Goals",
   },
   {
     id: "m4",
@@ -63,11 +58,9 @@ const milestones: Milestone[] = [
     title: "Magnetic Skyline",
     description:
       "Integrates magnet sockets into the bases and backplates to easily mount, swap, and modularly display skylines on walls or boards.",
-    status: "In Progress",
-    image:
-      "/sl4.webp",
+    status: "Locked",
     delivery: "2026/09/30 UTC",
-    included: "· All Stretch Goals",
+    included: "All Stretch Goals",
   },
   {
     id: "m5",
@@ -77,10 +70,8 @@ const milestones: Milestone[] = [
     description:
       "Unlock modular printing: build one district, or snap multiple sections together into a sprawling cityscape. Print a single block or the whole skyline.",
     status: "Locked",
-    image:
-      "/sl5.webp",
     delivery: "2026/10/15 UTC",
-    included: "· All Stretch Goals",
+    included: "All Stretch Goals",
   },
   {
     id: "m6",
@@ -90,10 +81,8 @@ const milestones: Milestone[] = [
     description:
       "We hand-model historical versions of iconic cities — Old New York, pre-war skylines, and more — so you can set your model to any era across decades.",
     status: "Locked",
-    image:
-      "/sl6.webp",
     delivery: "2026/10/30 UTC",
-    included: "· All Stretch Goals",
+    included: "All Stretch Goals",
   },
   {
     id: "m7",
@@ -103,252 +92,272 @@ const milestones: Milestone[] = [
     description:
       "A massive global expansion pack adding iconic landmarks and skylines from around the world.",
     status: "Locked",
-    image:
-      "/sl7.webp",
     delivery: "2026/11/15 UTC",
-    included: "· All Stretch Goals",
+    included: "All Stretch Goals",
   },
 ];
 
+const EASE = [0.22, 1, 0.36, 1] as const;
+
 export function Milestones() {
-  const [activeIndex, setActiveIndex] = useState(0);
-  const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const [activeId, setActiveId] = useState("m1");
   const [isPaused, setIsPaused] = useState(false);
-  const trackRef = useRef<HTMLDivElement>(null);
+  const [fundRaised, setFundRaised] = useState<number>(15692); // Default fallback
 
-  // Maximum slide index before reaching the rightmost edge cleanly without empty center space
-  // With 7 total cards and ~2.2 visible at once, index 4 (or 5) is the max before looping
-  const maxSlideIndex = milestones.length - 2;
+  const resumeTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const handleNext = () => {
-    setActiveIndex((prev) => (prev >= maxSlideIndex ? 0 : prev + 1));
+  // 1. Supabase dynamic data fetching
+  useEffect(() => {
+    async function fetchFundRaised() {
+      try {
+        const supabase = createClient();
+        const { data, error } = await supabase
+          .from("campaign_stats")
+          .select("fund_raised")
+          .eq("slug", "framecity-main")
+          .single();
+
+        if (data && !error && data.fund_raised !== undefined) {
+          setFundRaised(Number(data.fund_raised));
+        }
+      } catch {
+        // Dynamic fetch fail aana automatic fallback execute aagum
+      }
+    }
+
+    fetchFundRaised();
+  }, []);
+
+  // 2. Fund Raised Base Panni Status Update Function
+  const updatedMilestones = DEFAULT_MILESTONES.map((m, index) => {
+    const prevAmount = index > 0 ? DEFAULT_MILESTONES[index - 1].amount : 0;
+    
+    let status: "Unlocked" | "In Progress" | "Locked" = "Locked";
+    if (fundRaised >= m.amount) {
+      status = "Unlocked";
+    } else if (fundRaised > prevAmount && fundRaised < m.amount) {
+      status = "In Progress";
+    }
+
+    return { ...m, status };
+  });
+
+  const active = updatedMilestones.find((m) => m.id === activeId) || updatedMilestones[0];
+  const activeIdx = updatedMilestones.findIndex((m) => m.id === active.id);
+
+  // Unlocked Milestones Count
+  const unlockedCount = updatedMilestones.filter((m) => m.status === "Unlocked").length;
+
+  // 3. Dynamic Timeline Progress Line Percentage Calculation
+  const getLineProgressPercentage = () => {
+    if (updatedMilestones.length <= 1) return 0;
+    
+    // Unlocked milestones count exact point index
+    const completedIndex = unlockedCount - 1;
+    if (completedIndex < 0) return 0;
+    if (unlockedCount >= updatedMilestones.length) return 100;
+
+    // Segment calculation (Next targeted goal towards smooth step fill)
+    const basePercent = (completedIndex / (updatedMilestones.length - 1)) * 100;
+    const currentGoal = updatedMilestones[unlockedCount].amount;
+    const prevGoal = updatedMilestones[completedIndex].amount;
+    
+    const segmentProgress = (fundRaised - prevGoal) / (currentGoal - prevGoal);
+    const stepSize = 100 / (updatedMilestones.length - 1);
+
+    return Math.min(100, basePercent + segmentProgress * stepSize);
   };
 
-  const handlePrev = () => {
-    setActiveIndex((prev) => (prev === 0 ? maxSlideIndex : prev - 1));
-  };
-
-  // Auto-slide loop every 5 seconds
+  // Auto-advance
   useEffect(() => {
     if (isPaused) return;
     const interval = setInterval(() => {
-      handleNext();
-    }, 5000);
+      setActiveId((prev) => {
+        const idx = updatedMilestones.findIndex((m) => m.id === prev);
+        const nextIdx = idx >= updatedMilestones.length - 1 ? 0 : idx + 1;
+        return updatedMilestones[nextIdx].id;
+      });
+    }, 4500);
     return () => clearInterval(interval);
-  }, [isPaused, maxSlideIndex]);
+  }, [isPaused, updatedMilestones]);
+
+  const handleSelect = (id: string) => {
+    setActiveId(id);
+    setIsPaused(true);
+    if (resumeTimeout.current) clearTimeout(resumeTimeout.current);
+    resumeTimeout.current = setTimeout(() => setIsPaused(false), 8000);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (resumeTimeout.current) clearTimeout(resumeTimeout.current);
+    };
+  }, []);
 
   return (
     <section
       id="milestones"
-      className="warm-radial border-t border-cream/[0.09] py-20 md:py-28 w-full overflow-hidden px-4 md:px-12"
+      className="border-t border-cream/[0.08] py-20 md:py-28 w-full px-4 md:px-12 bg-[var(--bg)] overflow-hidden"
     >
-      <div className="w-full max-w-[1440px] mx-auto">
-        {/* Full-Width Section Header */}
-        <Reveal className="mb-12 flex flex-col md:flex-row md:items-end justify-between gap-6">
+      <div className="w-full max-w-[1180px] mx-auto">
+        {/* Header */}
+        <Reveal className="mb-16 flex flex-col md:flex-row md:items-end justify-between gap-6">
           <div>
-            
-            <h2 className="font-display text-3xl md:text-5xl font-normal text-cream m-0 leading-tight">
-              Project Milestones
+            <h2 className="font-display text-3xl md:text-[2.6rem] font-light text-cream m-0 leading-[1.15]">
+              Every goal we unlock together.
             </h2>
           </div>
-
-          <p className="text-xs md:text-sm text-cream/60 font-mono max-w-md m-0">
-            Hover over any goal image to inspect reward specs, unlocked features &amp; estimated delivery.
+          <p className="text-[13px] text-cream/50 max-w-[300px] m-0 leading-relaxed">
+            {unlockedCount} of {updatedMilestones.length} goals unlocked. Click any point on the line for the full brief.
           </p>
         </Reveal>
 
-        {/* Slider Track Wrapper with Generous Side Padding so Arrows NEVER Touch Images */}
-        <Reveal className="relative w-full px-8 sm:px-14 md:px-20">
-          {/* Theme-Aware Floating Left Arrow Button (Spaced Out & Accent Colored) */}
-          <button
-            onClick={handlePrev}
-            aria-label="Previous Goal"
-            className="absolute left-0 sm:left-1 md:left-2 top-[35%] -translate-y-1/2 z-40 w-12 h-12 md:w-14 md:h-14 rounded-full bg-white/[#1a1714]/95 backdrop-blur-md border border-[var(--accent)]/40 text-[var(--accent)] flex items-center justify-center shadow-2xl hover:scale-110 hover:bg-[var(--accent)] hover:text-black transition-all cursor-pointer"
-          >
-            <svg className="w-6 h-6 fill-none stroke-current" viewBox="0 0 24 24" strokeWidth="2.5">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
-            </svg>
-          </button>
-
-          {/* Theme-Aware Floating Right Arrow Button (Spaced Out & Accent Colored) */}
-          <button
-            onClick={handleNext}
-            aria-label="Next Goal"
-            className="absolute right-0 sm:right-1 md:right-2 top-[35%] -translate-y-1/2 z-40 w-12 h-12 md:w-14 md:h-14 rounded-full bg-white/[#1a1714]/95 backdrop-blur-md border border-[var(--accent)]/40 text-[var(--accent)] flex items-center justify-center shadow-2xl hover:scale-110 hover:bg-[var(--accent)] hover:text-black transition-all cursor-pointer"
-          >
-            <svg className="w-6 h-6 fill-none stroke-current" viewBox="0 0 24 24" strokeWidth="2.5">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-            </svg>
-          </button>
-
-          {/* Animated Horizontal Cards Track */}
+        {/* Timeline Line Rail & Points */}
+        <Reveal className="relative w-full overflow-x-auto pb-2 -mx-4 px-4 md:mx-0 md:px-0">
           <div
-            ref={trackRef}
             onMouseEnter={() => setIsPaused(true)}
             onMouseLeave={() => setIsPaused(false)}
-            className="relative overflow-hidden pt-4 pb-8 w-full"
+            className="relative min-w-[880px] md:min-w-0 pt-4 pb-10"
           >
-            <motion.div
-              animate={{ x: `calc(-${activeIndex * 510}px)` }}
-              transition={{ type: "spring", stiffness: 220, damping: 28 }}
-              className="flex gap-8 items-stretch w-max"
-            >
-              {milestones.map((item, idx) => {
-                const isActive = idx === activeIndex;
-                const isHovered = item.id === hoveredId;
+            <div className="relative flex justify-between items-start pt-12">
+              {/* Rail base border */}
+              <div className="absolute left-0 right-0 top-[136px] h-px bg-cream/12" />
+              
+              {/* Dynamic Progress Fill Bar */}
+              <div
+                className="absolute left-0 top-[136px] h-px bg-gradient-to-r from-[var(--accent)] to-[var(--accent)]/70 transition-all duration-700 ease-out"
+                style={{ width: `${getLineProgressPercentage()}%` }}
+              />
+              
+              {/* Glow Accent */}
+              <div
+                className="absolute left-0 top-[135px] h-[3px] bg-[var(--accent)]/25 blur-[3px] transition-all duration-700 ease-out"
+                style={{ width: `${getLineProgressPercentage()}%` }}
+              />
+
+              {updatedMilestones.map((item, idx) => {
                 const isUnlocked = item.status === "Unlocked";
                 const isInProgress = item.status === "In Progress";
+                const isActive = item.id === activeId;
 
                 return (
-                  <div
+                  <button
                     key={item.id}
-                    onMouseEnter={() => setHoveredId(item.id)}
-                    onMouseLeave={() => setHoveredId(null)}
-                    onClick={() => setActiveIndex(Math.min(idx, maxSlideIndex))}
-                    className="w-[360px] sm:w-[450px] md:w-[500px] flex-shrink-0 relative flex flex-col items-center group cursor-pointer"
+                    onClick={() => handleSelect(item.id)}
+                    className="relative flex flex-col items-center group cursor-pointer flex-1 px-1"
+                    aria-label={item.title}
                   >
-                    {/* Image Card Frame with generous height so hover content is 100% visible */}
                     <div
-                      className={`relative w-full min-h-[250px] md:min-h-[280px] overflow-hidden rounded-2xl border transition-all duration-500 shadow-2xl bg-black ${
-                        isActive
-                          ? "border-[var(--accent)] ring-2 ring-[var(--accent)]/30 scale-[1.01]"
-                          : "border-cream/15 hover:border-cream/40"
+                      className={`mb-4 h-[64px] flex flex-col justify-end text-center transition-all duration-300 ${
+                        isActive ? "opacity-100" : "opacity-55 group-hover:opacity-85"
                       }`}
                     >
-                      {/* Full Stretch Goal Banner Artwork */}
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={item.image}
-                        alt={item.title}
-                        className="w-full h-full object-fit transition-transform duration-700 group-hover:scale-105"
-                      />
-
-                      {/* Theme-Aware Hover Overlay Modal (Shows FULL contents on hover) */}
-                      <AnimatePresence>
-                        {isHovered && (
-                          <motion.div
-                            initial={{ opacity: 0, scale: 0.97 }}
-                            animate={{ opacity: 1, scale: 1 }}
-                            exit={{ opacity: 0, scale: 0.97 }}
-                            transition={{ duration: 0.2 }}
-                            className="absolute inset-0 z-30 p-5 md:p-6 flex flex-col justify-between bg-panel/98 backdrop-blur-2xl border-2 border-[var(--accent)] rounded-2xl text-cream shadow-2xl overflow-y-auto"
-                          >
-                            <div>
-                              <div className="flex items-center justify-between mb-2">
-                                <span
-                                  className="font-mono text-xs font-bold uppercase tracking-wider"
-                                  style={{ color: "var(--accent)" }}
-                                >
-                                  {item.goal}
-                                </span>
-                                <span
-                                  className={`text-[11px] font-mono font-bold px-3 py-0.5 rounded-full uppercase ${
-                                    isUnlocked
-                                      ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/40"
-                                      : isInProgress
-                                      ? "bg-amber-500/20 text-amber-400 border border-amber-500/40"
-                                      : "bg-cream/10 text-cream/60"
-                                  }`}
-                                >
-                                  {item.status}
-                                </span>
-                              </div>
-
-                              <h3 className="font-display text-xl md:text-2xl font-medium text-cream mb-2 leading-snug">
-                                {item.title}
-                              </h3>
-
-                              <p className="text-xs md:text-sm text-cream/90 leading-relaxed font-sans m-0">
-                                {item.description}
-                              </p>
-                            </div>
-
-                            <div className="pt-3 border-t border-cream/15 font-mono text-[11.5px] space-y-1.5 mt-3">
-                              <div className="flex justify-between">
-                                <span className="text-cream/60">Est. Delivery:</span>
-                                <span className="font-bold text-cream">{item.delivery}</span>
-                              </div>
-                              <div className="flex justify-between">
-                                <span className="text-cream/60">Includes:</span>
-                                <span
-                                  className="font-bold"
-                                  style={{ color: "var(--accent)" }}
-                                >
-                                  {item.included}
-                                </span>
-                              </div>
-                            </div>
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
-                    </div>
-
-                    {/* Downward Pointer Triangle */}
-                    <div
-                      className={`w-0 h-0 border-l-[9px] border-l-transparent border-r-[9px] border-r-transparent border-t-[9px] my-2 transition-colors duration-300 ${
-                        isActive || isHovered
-                          ? "border-t-[var(--accent)]"
-                          : "border-t-cream/20"
-                      }`}
-                    />
-
-                    {/* Continuous Horizontal Timeline Line above Tick Nodes */}
-                    <div className="relative w-full flex items-center justify-center my-1">
-                      <div className="absolute left-0 right-0 top-1/2 -translate-y-1/2 h-[3px] bg-cream/15" />
-                      <div
-                        className={`absolute left-0 top-1/2 -translate-y-1/2 h-[3px] transition-all duration-500 ${
-                          isUnlocked ? "bg-emerald-500 w-full" : isInProgress ? "bg-amber-500 w-1/2" : "bg-transparent w-0"
-                        }`}
-                      />
-                    </div>
-
-                    {/* Timeline Node Pin & Status Label */}
-                    <div className="flex flex-col items-center mt-2">
-                      <div
-                        className={`w-9 h-9 rounded-full flex items-center justify-center z-10 transition-all duration-300 shadow-xl ${
-                          isUnlocked
-                            ? "bg-emerald-500/20 text-emerald-400 border-2 border-emerald-400 shadow-[0_0_12px_rgba(16,185,129,0.4)]"
-                            : isInProgress
-                            ? "bg-amber-500/20 text-amber-400 border-2 border-amber-400 shadow-[0_0_12px_rgba(245,158,11,0.4)] animate-pulse"
-                            : "bg-panel text-cream/40 border border-cream/20"
+                      <p className="font-mono text-[10px] tracking-widest text-cream/40 mb-1.5 whitespace-nowrap">
+                        {item.goal}
+                      </p>
+                      <p
+                        className={`font-display text-[13.5px] leading-tight max-w-[112px] mx-auto line-clamp-2 transition-colors duration-300 ${
+                          isActive ? "text-[var(--accent-text)]" : "text-cream/85"
                         }`}
                       >
+                        {item.title}
+                      </p>
+                    </div>
+
+                    <div className="relative flex flex-col items-center">
+                      <span
+                        className={`relative z-10 w-[18px] h-[18px] rounded-full border-2 flex items-center justify-center transition-all duration-300 ${
+                          isUnlocked
+                            ? "bg-[var(--accent)] border-[var(--accent)] shadow-[0_0_0_4px_rgba(0,0,0,0)]"
+                            : isInProgress
+                            ? "border-[var(--accent)] bg-[var(--bg)]"
+                            : "border-cream/25 bg-[var(--bg)] group-hover:border-cream/45"
+                        } ${isActive ? "scale-[1.35]" : "group-hover:scale-110"}`}
+                      >
+                        {isActive && (
+                          <motion.span
+                            layoutId="active-ring"
+                            transition={{ duration: 0.4, ease: EASE }}
+                            className="absolute -inset-[7px] rounded-full border border-[var(--accent)]/50"
+                          />
+                        )}
                         {isUnlocked && (
-                          <svg className="w-4.5 h-4.5 fill-current" viewBox="0 0 24 24">
+                          <svg className="w-2.5 h-2.5 fill-[var(--bg)]" viewBox="0 0 24 24">
                             <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
                           </svg>
                         )}
                         {isInProgress && (
-                          <span
-                            className="w-2.5 h-2.5 rounded-full"
-                            style={{ background: "var(--accent)" }}
+                          <motion.span
+                            className="w-1.5 h-1.5 rounded-full bg-[var(--accent)]"
+                            animate={{ opacity: [0.3, 1, 0.3] }}
+                            transition={{ duration: 2.2, repeat: Infinity, ease: "easeInOut" }}
                           />
                         )}
-                        {item.status === "Locked" && (
-                          <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
-                            <path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z" />
-                          </svg>
-                        )}
-                      </div>
+                      </span>
 
                       <span
-                        className={`mt-2 font-mono text-xs font-bold ${
-                          isUnlocked
-                            ? "text-emerald-400"
-                            : isInProgress
-                            ? "text-amber-400"
-                            : "text-cream/40"
+                        className={`mt-3 font-mono text-[10px] transition-colors duration-300 ${
+                          isActive ? "text-cream/70" : "text-cream/30"
                         }`}
                       >
-                        {item.goal} {item.status}
+                        {String(idx + 1).padStart(2, "0")}
                       </span>
                     </div>
-                  </div>
+                  </button>
                 );
               })}
-            </motion.div>
+            </div>
           </div>
         </Reveal>
+
+        {/* Dynamic Detail Card View */}
+        <div className="relative mt-10 border-t border-cream/10 pt-10 overflow-hidden">
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={active.id}
+              initial={{ opacity: 0, x: 24 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -24 }}
+              transition={{ duration: 0.4, ease: EASE }}
+              className="grid md:grid-cols-[auto_1fr_220px] gap-6 md:gap-10 items-start"
+            >
+              <span className="font-display text-sm text-cream/70">
+                {String(activeIdx + 1).padStart(2, "0")} / {String(updatedMilestones.length).padStart(2, "0")}
+              </span>
+
+              <div>
+                <span
+                  className={`inline-block font-mono text-[10px] tracking-widest uppercase mb-3 ${
+                    active.status === "Unlocked"
+                      ? "text-[var(--accent-text)]"
+                      : active.status === "In Progress"
+                      ? "text-cream/70"
+                      : "text-cream/75"
+                  }`}
+                >
+                  {active.status} · {active.goal}
+                </span>
+                <h3 className="font-display text-2xl md:text-3xl font-light text-cream mb-3 leading-snug">
+                  {active.title}
+                </h3>
+                <p className="text-[14px] md:text-[15px] text-cream/65 leading-relaxed max-w-[540px] m-0">
+                  {active.description}
+                </p>
+              </div>
+
+              <div className="flex md:flex-col gap-6 md:gap-4 font-mono text-[11px] md:pt-1">
+                <div>
+                  <p className="text-cream/70 m-0 mb-1">Est. delivery</p>
+                  <p className="text-cream/85 m-0">{active.delivery}</p>
+                </div>
+                <div>
+                  <p className="text-cream/70 m-0 mb-1">Includes</p>
+                  <p className="text-[var(--accent-text)] m-0">{active.included}</p>
+                </div>
+              </div>
+            </motion.div>
+          </AnimatePresence>
+        </div>
       </div>
     </section>
   );

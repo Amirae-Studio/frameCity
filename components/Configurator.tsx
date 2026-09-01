@@ -196,7 +196,7 @@ export function Configurator() {
                         {/* <div className="font-mono text-[9px] text-cream/50 uppercase truncate">
                           {item.value}
                         </div> */}
-                        <div className="font-mono text-xs font-bold text-cream group-hover:text-[var(--accent)] transition-colors truncate">
+                        <div className="font-mono text-xs font-bold text-cream group-hover:text-[var(--accent-text)] transition-colors truncate">
                           {item.value}
                         </div>
                       </div>

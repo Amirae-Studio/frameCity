@@ -21,6 +21,7 @@
   /* Live accent — swappable at runtime via the theme control */
   --accent: #c79366;
   --accent-rgb: 199, 147, 102;
+  --accent-text: #875428;
 
   /* rgb of the ink token, for inline rgba() borders/overlays */
   --ink-rgb: 242, 239, 233;
