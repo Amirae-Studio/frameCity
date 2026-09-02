@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, useInView } from "framer-motion";
 import { Reveal } from "./Reveal";
 import { createClient } from "@/lib/supabase/client";
 
@@ -194,6 +194,10 @@ export function Milestones() {
     };
   }, []);
 
+  // Ref for the timeline section to trigger progress bar entry animation
+  const timelineRef = useRef<HTMLDivElement>(null);
+  const isTimelineInView = useInView(timelineRef, { once: true, margin: "-100px" });
+
   return (
     <section
       id="milestones"
@@ -201,19 +205,21 @@ export function Milestones() {
     >
       <div className="w-full max-w-[1180px] mx-auto">
         {/* Header */}
-        <Reveal className="mb-16 flex flex-col md:flex-row md:items-end justify-between gap-6">
-          <div>
+        <div className="mb-16 flex flex-col md:flex-row md:items-end justify-between gap-6">
+          <Reveal variant="fade-right">
             <h2 className="font-display text-3xl md:text-[2.6rem] font-light text-cream m-0 leading-[1.15]">
               Every goal we unlock together.
             </h2>
-          </div>
-          <p className="text-[13px] text-cream/50 max-w-[300px] m-0 leading-relaxed">
-            {unlockedCount} of {updatedMilestones.length} goals unlocked. Click any point on the line for the full brief.
-          </p>
-        </Reveal>
+          </Reveal>
+          <Reveal variant="fade-left" delay={1}>
+            <p className="text-[13px] text-cream/50 max-w-[300px] m-0 leading-relaxed">
+              {unlockedCount} of {updatedMilestones.length} goals unlocked. Click any point on the line for the full brief.
+            </p>
+          </Reveal>
+        </div>
 
         {/* Timeline Line Rail & Points */}
-        <Reveal className="relative w-full overflow-x-auto pb-2 -mx-4 px-4 md:mx-0 md:px-0">
+        <div ref={timelineRef} className="relative w-full overflow-x-auto pb-2 -mx-4 px-4 md:mx-0 md:px-0">
           <div
             onMouseEnter={() => setIsPaused(true)}
             onMouseLeave={() => setIsPaused(false)}
@@ -223,16 +229,20 @@ export function Milestones() {
               {/* Rail base border */}
               <div className="absolute left-0 right-0 top-[136px] h-px bg-cream/12" />
               
-              {/* Dynamic Progress Fill Bar */}
-              <div
-                className="absolute left-0 top-[136px] h-px bg-gradient-to-r from-[var(--accent)] to-[var(--accent)]/70 transition-all duration-700 ease-out"
-                style={{ width: `${getLineProgressPercentage()}%` }}
+              {/* Dynamic Progress Fill Bar — animates on viewport entry */}
+              <motion.div
+                className="absolute left-0 top-[136px] h-px bg-gradient-to-r from-[var(--accent)] to-[var(--accent)]/70"
+                initial={{ width: "0%" }}
+                animate={isTimelineInView ? { width: `${getLineProgressPercentage()}%` } : { width: "0%" }}
+                transition={{ duration: 1.2, ease: [0.22, 1, 0.36, 1], delay: 0.4 }}
               />
               
               {/* Glow Accent */}
-              <div
-                className="absolute left-0 top-[135px] h-[3px] bg-[var(--accent)]/25 blur-[3px] transition-all duration-700 ease-out"
-                style={{ width: `${getLineProgressPercentage()}%` }}
+              <motion.div
+                className="absolute left-0 top-[135px] h-[3px] bg-[var(--accent)]/25 blur-[3px]"
+                initial={{ width: "0%" }}
+                animate={isTimelineInView ? { width: `${getLineProgressPercentage()}%` } : { width: "0%" }}
+                transition={{ duration: 1.2, ease: [0.22, 1, 0.36, 1], delay: 0.4 }}
               />
 
               {updatedMilestones.map((item, idx) => {
@@ -241,7 +251,10 @@ export function Milestones() {
                 const isActive = item.id === activeId;
 
                 return (
-                  <button
+                  <motion.button
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={isTimelineInView ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
+                    transition={{ duration: 0.55, delay: 0.2 + idx * 0.09, ease: [0.22, 1, 0.36, 1] }}
                     key={item.id}
                     onClick={() => handleSelect(item.id)}
                     className="relative flex flex-col items-center group cursor-pointer flex-1 px-1"
@@ -252,9 +265,9 @@ export function Milestones() {
                         isActive ? "opacity-100" : "opacity-55 group-hover:opacity-85"
                       }`}
                     >
-                      <p className="font-mono text-[10px] tracking-widest text-cream/40 mb-1.5 whitespace-nowrap">
+                      {/* <p className="font-mono text-[10px] tracking-widest text-cream/40 mb-1.5 whitespace-nowrap">
                         {item.goal}
-                      </p>
+                      </p> */}
                       <p
                         className={`font-display text-[13.5px] leading-tight max-w-[112px] mx-auto line-clamp-2 transition-colors duration-300 ${
                           isActive ? "text-[var(--accent-text)]" : "text-cream/85"
@@ -274,13 +287,13 @@ export function Milestones() {
                             : "border-cream/25 bg-[var(--bg)] group-hover:border-cream/45"
                         } ${isActive ? "scale-[1.35]" : "group-hover:scale-110"}`}
                       >
-                        {isActive && (
+                        {/* {isActive && (
                           <motion.span
                             layoutId="active-ring"
                             transition={{ duration: 0.4, ease: EASE }}
                             className="absolute -inset-[7px] rounded-full border border-[var(--accent)]/50"
                           />
-                        )}
+                        )} */}
                         {isUnlocked && (
                           <svg className="w-2.5 h-2.5 fill-[var(--bg)]" viewBox="0 0 24 24">
                             <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
@@ -288,7 +301,7 @@ export function Milestones() {
                         )}
                         {isInProgress && (
                           <motion.span
-                            className="w-1.5 h-1.5 rounded-full bg-[var(--accent)]"
+                            className="w-1.5 h-1.5"
                             animate={{ opacity: [0.3, 1, 0.3] }}
                             transition={{ duration: 2.2, repeat: Infinity, ease: "easeInOut" }}
                           />
@@ -303,12 +316,12 @@ export function Milestones() {
                         {String(idx + 1).padStart(2, "0")}
                       </span>
                     </div>
-                  </button>
+                  </motion.button>
                 );
               })}
             </div>
           </div>
-        </Reveal>
+        </div>
 
         {/* Dynamic Detail Card View */}
         <div className="relative mt-10 border-t border-cream/10 pt-10 overflow-hidden">
@@ -321,12 +334,12 @@ export function Milestones() {
               transition={{ duration: 0.4, ease: EASE }}
               className="grid md:grid-cols-[auto_1fr_220px] gap-6 md:gap-10 items-start"
             >
-              <span className="font-display text-sm text-cream/70">
+              {/* <span className="font-display text-sm text-cream/70">
                 {String(activeIdx + 1).padStart(2, "0")} / {String(updatedMilestones.length).padStart(2, "0")}
-              </span>
+              </span> */}
 
               <div>
-                <span
+                {/* <span
                   className={`inline-block font-mono text-[10px] tracking-widest uppercase mb-3 ${
                     active.status === "Unlocked"
                       ? "text-[var(--accent-text)]"
@@ -336,7 +349,7 @@ export function Milestones() {
                   }`}
                 >
                   {active.status} · {active.goal}
-                </span>
+                </span> */}
                 <h3 className="font-display text-2xl md:text-3xl font-light text-cream mb-3 leading-snug">
                   {active.title}
                 </h3>
@@ -345,7 +358,7 @@ export function Milestones() {
                 </p>
               </div>
 
-              <div className="flex md:flex-col gap-6 md:gap-4 font-mono text-[11px] md:pt-1">
+              {/* <div className="flex md:flex-col gap-6 md:gap-4 font-mono text-[11px] md:pt-1">
                 <div>
                   <p className="text-cream/70 m-0 mb-1">Est. delivery</p>
                   <p className="text-cream/85 m-0">{active.delivery}</p>
@@ -354,7 +367,7 @@ export function Milestones() {
                   <p className="text-cream/70 m-0 mb-1">Includes</p>
                   <p className="text-[var(--accent-text)] m-0">{active.included}</p>
                 </div>
-              </div>
+              </div> */}
             </motion.div>
           </AnimatePresence>
         </div>

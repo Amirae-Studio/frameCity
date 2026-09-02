@@ -1,9 +1,9 @@
 "use client";
 
 import Image from "next/image";
-import { motion } from "framer-motion";
+import { motion, useMotionValue, useTransform, animate } from "framer-motion";
 import { Reveal } from "./Reveal";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 
 // Default Constant Fallback Values
@@ -22,11 +22,40 @@ export const DEFAULT_CAMPAIGN = {
   end_date_utc: "2026/09/09 18:20:36 UTC",
 };
 
+// Animated counter hook
+function useCountUp(target: number, duration = 1.6) {
+  const motionVal = useMotionValue(0);
+  const rounded = useTransform(motionVal, (v) => Math.round(v).toLocaleString());
+  const inViewRef = useRef<HTMLSpanElement>(null);
+  const hasAnimated = useRef(false);
+
+  useEffect(() => {
+    const el = inViewRef.current;
+    if (!el) return;
+    const obs = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting && !hasAnimated.current) {
+          hasAnimated.current = true;
+          animate(motionVal, target, { duration, ease: [0.22, 1, 0.36, 1] });
+        }
+      },
+      { threshold: 0.4 }
+    );
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [target, duration, motionVal]);
+
+  return { rounded, inViewRef };
+}
+
 export function Support() {
-  // const [copied, setCopied] = useState(false);
-  // const [isFollowing, setIsFollowing] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [campaign, setCampaign] = useState(DEFAULT_CAMPAIGN);
+
+  // Count-up animations
+  const fundUp = useCountUp(campaign.fund_raised);
+  const backersUp = useCountUp(campaign.backers, 1.2);
+  const daysUp = useCountUp(campaign.days_to_go, 0.8);
 
   useEffect(() => {
     async function fetchCampaignStats() {
@@ -180,14 +209,16 @@ export function Support() {
                   </div>
                 </div>
 
-                {/* Amount Raised & Stats */}
+                {/* Amount Raised & Stats — count-up */}
                 <div className="mb-4">
                   <div className="text-3xl md:text-4xl font-extrabold text-[#22c55e] tracking-tight mb-1">
-                    USD {campaign.fund_raised.toLocaleString()}
+                    USD <motion.span ref={fundUp.inViewRef}>{fundUp.rounded}</motion.span>
                   </div>
                   <div className="flex justify-between items-center text-sm text-cream/70 font-medium">
                     <span>pledged of USD {campaign.goal_amount.toLocaleString()} goal</span>
-                    <span className="text-cream font-bold">{campaign.backers.toLocaleString()} backers</span>
+                    <span className="text-cream font-bold">
+                      <motion.span ref={backersUp.inViewRef}>{backersUp.rounded}</motion.span> backers
+                    </span>
                   </div>
                 </div>
 
@@ -203,28 +234,31 @@ export function Support() {
                     />
                   </div>
                   <div className="mt-2 text-sm font-bold text-cream">
-                    {campaign.days_to_go} <span className="font-normal text-cream/60">days to go</span>
+                    <motion.span ref={daysUp.inViewRef}>{daysUp.rounded}</motion.span>{" "}
+                    <span className="font-normal text-cream/60">days to go</span>
                   </div>
                 </div>
               </div>
 
-              {/* Action Buttons & Links */}
-              <div className="space-y-4 pt-4 border-t border-cream/10">
-                {/* Back this project button -> Redirects to MakerWorld */}
-                <a
-                  href={campaign.makerworld_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="w-full inline-flex items-center justify-center py-4 px-6 rounded-xl text-base font-semibold bg-[#22c55e] hover:bg-[#16a34a] text-white transition-all duration-300 border border-emerald-500/30 shadow-md group cursor-pointer no-underline"
-                >
-                  <span className="group-hover:scale-105 transition-transform duration-200 flex items-center gap-2">
-                    Back this project on MakerWorld
-                    <svg className="w-4 h-4 stroke-current fill-none" viewBox="0 0 24 24" strokeWidth="2">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M14 5l7 7m0 0l-7 7m7-7H3" />
-                    </svg>
-                  </span>
-                </a>
-              </div>
+                {/* Action Buttons & Links */}
+                <div className="space-y-4 pt-4 border-t border-cream/10">
+                  {/* Back this project button -> Redirects to MakerWorld */}
+                  <motion.a
+                    href={campaign.makerworld_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    whileHover={{ scale: 1.02, boxShadow: "0 0 24px rgba(34,197,94,0.35)" }}
+                    whileTap={{ scale: 0.98 }}
+                    className="w-full inline-flex items-center justify-center py-4 px-6 rounded-xl text-base font-semibold bg-[#22c55e] hover:bg-[#16a34a] text-white transition-colors duration-300 border border-emerald-500/30 shadow-md group cursor-pointer no-underline"
+                  >
+                    <span className="flex items-center gap-2">
+                      Back this project on MakerWorld
+                      <svg className="w-4 h-4 stroke-current fill-none" viewBox="0 0 24 24" strokeWidth="2">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                      </svg>
+                    </span>
+                  </motion.a>
+                </div>
             </div>
           </div>
         </Reveal>

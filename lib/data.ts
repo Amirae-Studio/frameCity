@@ -65,4 +65,3 @@ export const accents: Accent[] = [
   { value: "#b06a4a", rgb: "176, 106, 74", label: "Terracotta" },
 ];
 
-export const CTA_LABEL = "Create now";

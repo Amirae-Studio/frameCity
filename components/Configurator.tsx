@@ -4,6 +4,7 @@ import Image from "next/image";
 import { useState } from "react";
 import { motion } from "framer-motion";
 import { Reveal } from "./Reveal";
+import { Button } from "./ui/Button";
 
 export function Configurator() {
   const [formData, setFormData] = useState({
@@ -147,12 +148,12 @@ export function Configurator() {
                 />
               </div>
 
-              <button
+              <Button
                 type="submit"
                 className="w-full py-4 rounded-xl bg-cream text-[var(--color-base)] font-mono text-xs font-bold uppercase tracking-wider hover:scale-[1.01] transition-transform cursor-pointer border-none shadow-md"
               >
                 Submit Request to Studio &rarr;
-              </button>
+              </Button>
 
               {submitted && (
                 <motion.p

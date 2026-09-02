@@ -2,11 +2,11 @@
 
 @theme {
   /* Surfaces (dark defaults — overridden at runtime by [data-theme="light"]) */
-  --color-base: #0e0d0c;
-  --color-panel: #141210;
-  --color-panel-2: #17150f;
-  --color-deep: #0b0a09;
-  --color-marquee: #111010;
+  --color-base: #000000;
+  --color-panel: #0a0a0a;
+  --color-panel-2: #121212;
+  --color-deep: #000000;
+  --color-marquee: #050505;
 
   /* Ink — the primary foreground. Light on dark here, dark on light in light mode. */
   --color-cream: #f2efe9;
@@ -98,11 +98,11 @@ body {
    photo only reads emerging from darkness). Pins the whole dark palette
    locally so scrim, ink and buttons all render as in dark mode. */
 .force-dark {
-  --color-base: #0e0d0c;
-  --color-panel: #141210;
-  --color-panel-2: #17150f;
-  --color-deep: #0b0a09;
-  --color-marquee: #111010;
+  --color-base: #000000;
+  --color-panel: #0a0a0a;
+  --color-panel-2: #121212;
+  --color-deep: #000000;
+  --color-marquee: #050505;
   --color-cream: #f2efe9;
   --ink-rgb: 242, 239, 233;
   --logo-filter: none;
