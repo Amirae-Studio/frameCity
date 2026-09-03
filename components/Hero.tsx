@@ -40,7 +40,7 @@ export function Hero() {
   return (
     <section
       ref={sectionRef}
-      className="force-dark relative flex min-h-[100dvh] flex-col justify-between overflow-hidden border-b border-cream/[0.09] bg-base md:min-h-[800px] md:block"
+      className="force-dark relative flex flex-col justify-between overflow-hidden border-b border-cream/[0.09] bg-base md:block md:min-h-[580px]"
     >
       {/* Background LightRays Canvas */}
       <div className="absolute inset-0 z-[0] pointer-events-none flex items-center justify-center">
@@ -52,7 +52,7 @@ export function Hero() {
           rayLength={5.0}         
           pulsating={true}
           fadeDistance={3.0}      
-          saturation={1.0}
+          saturation={0.5}
           followMouse={true}
           mouseInfluence={0.2}
           distortion={0.1}
@@ -63,7 +63,7 @@ export function Hero() {
       {/* Main Text Content Block */}
       <motion.div
         style={{ y: textY, opacity: contentOpacity }}
-        className="relative z-[2] w-full max-w-[620px] px-5 pt-16 pb-6 sm:px-8 md:px-[52px] md:pt-[110px] md:pb-20 pointer-events-auto"
+        className="relative z-[2] w-full max-w-[620px] px-5 pt-10 pb-4 sm:px-8 md:px-[52px] md:pt-[60px] md:pb-[60px] pointer-events-auto"
       >
         {/* Responsive Heading */}
         <motion.h1
@@ -90,7 +90,7 @@ export function Hero() {
           animate="show"
           className="mt-3 sm:mt-4 md:mt-6 max-w-[380px] text-[14px] sm:text-[15px] md:text-[16px] leading-[1.6] text-cream/80"
         >
-          Detailed 3D cityscapes crafted into refined framed art for your space.
+          Detailed 3D cityscapes crafted into refined framed art for your space. We bring your favorite locations to life through precision 1:1000 scale architectural relief models that turn memory into lasting gallery-grade art.
         </motion.p>
 
         {/* Responsive Buttons */}
@@ -127,7 +127,7 @@ export function Hero() {
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
         transition={{ duration: 1.4, ease: [0.22, 1, 0.36, 1] }}
-        className="relative z-[1] h-[320px] w-full flex items-center justify-center opacity-90 md:absolute md:right-0 md:top-1/3 md:-translate-y-1/2 md:h-[70%] md:w-[54%] md:opacity-100 md:right-6 lg:right-12"
+        className="relative z-[1] h-[260px] w-full flex items-center justify-center opacity-90 md:absolute md:right-0 md:top-1/3 md:-translate-y-1/2 md:h-[85%] md:w-[54%] md:opacity-100 md:right-6 lg:right-12"
       >
         <HeroModelScene />
       </motion.div>

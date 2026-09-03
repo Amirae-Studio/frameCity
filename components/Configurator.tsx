@@ -5,6 +5,7 @@ import { useState } from "react";
 import { motion } from "framer-motion";
 import { Reveal } from "./Reveal";
 import { Button } from "./ui/Button";
+import { Input, Textarea } from "./ui/Input";
 
 export function Configurator() {
   const [formData, setFormData] = useState({
@@ -13,7 +14,6 @@ export function Configurator() {
     description: "",
   });
   const [submitted, setSubmitted] = useState(false);
-  const [copiedEmail, setCopiedEmail] = useState(false);
 
   const contactLinks = [
     {
@@ -68,12 +68,6 @@ export function Configurator() {
     }, 4000);
   };
 
-  const handleCopyEmail = () => {
-    navigator.clipboard.writeText("framecities@gmail.com");
-    setCopiedEmail(true);
-    setTimeout(() => setCopiedEmail(false), 2000);
-  };
-
   return (
     <section
       id="create"
@@ -83,20 +77,6 @@ export function Configurator() {
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-stretch">
           <Reveal className="lg:col-span-6 flex flex-col justify-between space-y-6">
             <div>
-              {/* <div
-                className="mb-4 inline-flex items-center gap-2 rounded-full px-4 py-1.5 font-mono text-xs font-bold uppercase tracking-widest"
-                style={{
-                  color: "var(--accent)",
-                  border: "1px solid rgba(var(--accent-rgb), 0.35)",
-                }}
-              >
-                <span
-                  className="h-2 w-2 rounded-full animate-pulse"
-                  style={{ background: "var(--accent)" }}
-                />
-                Custom Requests · Amiraé Studio
-              </div> */}
-
               <h2 className="font-display text-4xl md:text-5xl font-normal leading-[1.08] text-cream m-0">
                 Can&apos;t find your city in the collection?
               </h2>
@@ -106,47 +86,32 @@ export function Configurator() {
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <label className="block font-mono text-[11px] text-cream/60 uppercase tracking-wider mb-1">
-                  Your Name *
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  placeholder="John Doe"
-                  className="w-full rounded-xl border border-cream/20 bg-panel px-4 py-3 text-sm text-cream placeholder-cream/40 outline-none focus:border-[var(--accent)] transition-colors"
-                />
-              </div>
+              <Input
+                label="Your Name *"
+                type="text"
+                required
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                placeholder="John Doe"
+              />
 
-              <div>
-                <label className="block font-mono text-[11px] text-cream/60 uppercase tracking-wider mb-1">
-                  Your Email *
-                </label>
-                <input
-                  type="email"
-                  required
-                  value={formData.email}
-                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                  placeholder="john@example.com"
-                  className="w-full rounded-xl border border-cream/20 bg-panel px-4 py-3 text-sm text-cream placeholder-cream/40 outline-none focus:border-[var(--accent)] transition-colors"
-                />
-              </div>
+              <Input
+                label="Your Email *"
+                type="email"
+                required
+                value={formData.email}
+                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                placeholder="john@example.com"
+              />
 
-              <div>
-                <label className="block font-mono text-[11px] text-cream/60 uppercase tracking-wider mb-1">
-                  City Request &amp; Description *
-                </label>
-                <textarea
-                  required
-                  rows={3}
-                  value={formData.description}
-                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  placeholder="Describe your requested city district, landmark coordinates, or frame preferences..."
-                  className="w-full rounded-xl border border-cream/20 bg-panel px-4 py-3 text-sm text-cream placeholder-cream/40 outline-none focus:border-[var(--accent)] transition-colors resize-none"
-                />
-              </div>
+              <Textarea
+                label="City Request & Description *"
+                required
+                rows={3}
+                value={formData.description}
+                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                placeholder="Describe your requested city district, landmark coordinates, or frame preferences..."
+              />
 
               <Button
                 type="submit"
@@ -172,16 +137,15 @@ export function Configurator() {
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 {contactLinks.map((item) => (
-                 <div
-  key={item.name}
-  onClick={() => 
-    item.name === 'Email Support' 
-      ? (navigator.clipboard.writeText(item.href), alert('Email copied!')) 
-      : window.open(item.href, '_blank')
-  }
-  className="flex items-center justify-between p-3 rounded-xl border border-cream/10 bg-panel/80 hover:border-cream/30 transition-all group cursor-pointer"
->
-
+                  <div
+                    key={item.name}
+                    onClick={() =>
+                      item.name === "Email Support"
+                        ? (navigator.clipboard.writeText(item.value), alert("Email copied!"))
+                        : window.open(item.href, "_blank")
+                    }
+                    className="flex items-center justify-between p-3 rounded-xl border border-cream/10 bg-panel/80 hover:border-cream/30 transition-all group cursor-pointer"
+                  >
                     <div className="flex items-center gap-2.5 overflow-hidden">
                       <div
                         className="w-8 h-8 rounded-full flex items-center justify-center border flex-shrink-0"
@@ -194,32 +158,11 @@ export function Configurator() {
                         {item.icon}
                       </div>
                       <div className="overflow-hidden">
-                        {/* <div className="font-mono text-[9px] text-cream/50 uppercase truncate">
-                          {item.value}
-                        </div> */}
                         <div className="font-mono text-xs font-bold text-cream group-hover:text-[var(--accent-text)] transition-colors truncate">
                           {item.value}
                         </div>
                       </div>
                     </div>
-
-                    {/* {item.action === "copy" ? (
-                      <button
-                        onClick={handleCopyEmail}
-                        className="px-2.5 py-1 rounded-full border border-cream/20 text-[10px] font-mono text-cream/80 hover:text-cream hover:border-cream/50 transition-colors cursor-pointer bg-transparent flex-shrink-0 ml-2"
-                      >
-                        {copiedEmail ? "✓" : "Copy"}
-                      </button>
-                    ) : (
-                      <a
-                        href={item.href}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="px-2.5 py-1 rounded-full border border-cream/20 text-[10px] font-mono text-cream/80 hover:text-cream hover:border-cream/50 transition-colors no-underline flex-shrink-0 ml-2"
-                      >
-                        Visit &rarr;
-                      </a>
-                    )} */}
                   </div>
                 ))}
               </div>

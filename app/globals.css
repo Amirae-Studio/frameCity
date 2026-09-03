@@ -19,9 +19,9 @@
 
 :root {
   /* Live accent — swappable at runtime via the theme control */
-  --accent: #c79366;
+  --accent: #B98A5E;
   --accent-rgb: 199, 147, 102;
-  --accent-text: #875428;
+  --accent-text: #B98A5E;
 
   /* rgb of the ink token, for inline rgba() borders/overlays */
   --ink-rgb: 242, 239, 233;

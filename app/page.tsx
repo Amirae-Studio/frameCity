@@ -7,6 +7,7 @@ import { ModelShowcase } from "@/components/ModelShowcase";
 import { Milestones } from "@/components/Milestones";
 import { Configurator } from "@/components/Configurator";
 import { Support } from "@/components/Support";
+import { FAQ } from "@/components/FAQ";
 import { Footer } from "@/components/Footer";
 import { createClient } from "@/lib/supabase/server";
 import { toNavUser } from "@/lib/user";
@@ -31,6 +32,7 @@ export default async function Home() {
         <Milestones />
         <Configurator />
         <Support />
+        <FAQ />
       </main>
       <Footer />
       {/* <AccentControl /> */}

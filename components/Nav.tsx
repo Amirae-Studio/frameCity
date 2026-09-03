@@ -16,12 +16,12 @@ export function Nav({ initialUser }: { initialUser: NavUser | null }) {
   const isHome = pathname === "/";
 
   const links = [
-    { label: "Collection", href: isHome ? "#collection" : "/#collection" },
     { label: "Craft", href: isHome ? "#craft" : "/#craft" },
     { label: "Milestones", href: isHome ? "#milestones" : "/#milestones" },
     { label: "Create", href: isHome ? "#create" : "/#create" },
     { label: "Gallery", href: "/gallery" },
     { label: "Support", href: isHome ? "#support" : "/#support" },
+    { label: "FAQ", href: isHome ? "#faq" : "/#faq" },
   ];
 
   // Close mobile menu when pathname changes
@@ -68,8 +68,9 @@ export function Nav({ initialUser }: { initialUser: NavUser | null }) {
         {/* Desktop & Mobile Right Actions */}
         <div className="flex items-center gap-3 md:gap-4">
           {user ? (
-            <a
+            <Button
               href="/account"
+              variant="none"
               title={`Signed in as ${user.email}`}
               className="group flex items-center gap-2 rounded-full border border-cream/[0.16] py-[5px] pl-[5px] pr-3 no-underline transition-colors duration-300 hover:border-cream/40"
             >
@@ -92,25 +93,26 @@ export function Nav({ initialUser }: { initialUser: NavUser | null }) {
               <span className="max-w-[90px] truncate text-[12.5px] text-cream/75 transition-colors group-hover:text-cream hidden sm:inline">
                 {user.name}
               </span>
-            </a>
+            </Button>
           ) : (
-            <a
+            <Button
               href="/login"
               className="hidden text-[13px] text-cream/70 no-underline transition-colors hover:text-cream sm:inline"
             >
               Sign in
-            </a>
+            </Button>
           )}
 
           <ThemeToggle />
 
-          <a
+          <Button
             href="/studio"
+            variant="none"
             className="group hidden sm:inline-flex items-center gap-2 rounded-full bg-cream px-5 py-[11px] text-[13px] text-[var(--color-base)] no-underline transition-transform duration-300 hover:scale-[1.03]"
           >
             {user ? "Studio" : "Studio"}
             <span className="inline-block h-[5px] w-[5px] rotate-45 border-r-[1.5px] border-t-[1.5px] border-[var(--color-base)] transition-transform duration-300 group-hover:translate-x-0.5" />
-          </a>
+          </Button>
 
           {/* Mobile Hamburger Button */}
           <button
