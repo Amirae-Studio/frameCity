@@ -21,6 +21,9 @@ import { recordDownload } from "@/app/actions/downloads";
 import { TempAccessModal } from "@/components/TempAccessModal";
 import type { GizmoMode } from "./StudioScene";
 import { exportTo3MF, collectTransformedMeshes } from "@/lib/3mfExporter";
+import Scrubber from "../ui/Scrubber";
+import Switch from "../ui/Switch";
+import { Box, Building2, Palette, PrinterIcon, Road, Shrub, SquareDimensions, TreePine } from "lucide-react";
 
 
 const StudioScene = dynamic(() => import("./StudioScene"), {
@@ -72,9 +75,12 @@ export function StudioConfigurator({
   const [downloadLimitModal, setDownloadLimitModal] = useState(false);
   const [tempAccessModalOpen, setTempAccessModalOpen] = useState(false);
 
-  // Live "Manipulate city" controls — applied per layer in the scene.
+  // Active dashboard tab state
+  type StudioTab = "printer" | "transform" | "city" | "revit" | "colors";
+  const [activeTab, setActiveTab] = useState<StudioTab | null>("printer");
+
+  // Live "Manipulate city" controls
   const [cityCtl, setCityCtl] = useState<CityControls>(CITY_DEFAULTS);
-  const [cityOpen, setCityOpen] = useState(true);
   const setCtl = <K extends keyof CityControls>(k: K, v: CityControls[K]) =>
     setCityCtl((c) => ({ ...c, [k]: v }));
 
@@ -90,7 +96,6 @@ export function StudioConfigurator({
 
   const printer = printers.find((p) => p.id === printerId)!;
 
-  // Only offer controls for layers that actually exist in this tile's folder.
   const layerSet = useMemo(
     () => new Set(modelFiles.map((f) => f.name)),
     [modelFiles]
@@ -118,9 +123,6 @@ export function StudioConfigurator({
     }
   }, [availableColorLayers, activeColorTab]);
 
-  // List + sign every GLB layer in this location's folder (terrain, roads,
-  // buildings, …). Nothing is mounted in the scene until this settles — no
-  // placeholder→model swap. Empty folder → fallback tile.
   useEffect(() => {
     let cancelled = false;
     setModelLoading(true);
@@ -176,7 +178,6 @@ export function StudioConfigurator({
     setIsExporting(true);
     setDownloadNotice(null);
 
-    // Record download in Supabase & check monthly quota for Explorer tier
     const res = await recordDownload(city.slug, location.slug);
     if (!res.ok) {
       setIsExporting(false);
@@ -194,9 +195,6 @@ export function StudioConfigurator({
 
     try {
       if (useColors) {
-        // ── 3MF export (colored) ─────────────────────────────────────────
-        // exportTo3MF walks the full hierarchy, applies world-space transforms
-        // per-mesh, and skips invisible objects — no position reset needed.
         const blob = exportTo3MF(mesh);
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
@@ -213,7 +211,6 @@ export function StudioConfigurator({
           setDownloadNotice("Download recorded! 3MF file ready — colors included.");
         }
       } else {
-        // ── STL export (no colors) ───────────────────────────────────────
         const { STLExporter } = await import(
           "three/examples/jsm/exporters/STLExporter.js"
         );
@@ -324,7 +321,7 @@ export function StudioConfigurator({
         onClose={() => setTempAccessModalOpen(false)}
       />
 
-      {/* ------------------------------------------------ top bar */}
+      {/* Header */}
       <header className="sticky top-0 z-30 flex h-16 items-center justify-between gap-3 border-b border-cream/[0.09] bg-deep/70 px-4 backdrop-blur-xl md:px-6">
         <div className="flex min-w-0 items-center gap-4">
           <Link
@@ -400,10 +397,14 @@ export function StudioConfigurator({
         </div>
       </header>
 
-      {/* ------------------------------------------------ workspace */}
+      {/* Workspace */}
       <div className="relative flex-1 lg:h-[calc(100dvh-64px)] lg:overflow-hidden">
-        {/* viewport */}
-        <div className="studio-viewport relative h-[52vh] lg:absolute lg:inset-0 lg:h-full">
+        {/* Viewport */}
+        <div
+          className={`studio-viewport relative h-[52vh] lg:absolute lg:inset-0 lg:h-full transition-all duration-300 ease-out ${
+            activeTab ? "lg:pl-[380px]" : "lg:pl-[76px]"
+          }`}
+        >
           <StudioScene
             bedW={printer.bed[0]}
             bedD={printer.bed[1]}
@@ -416,363 +417,467 @@ export function StudioConfigurator({
             onTransform={syncFromMesh}
           />
 
-          {/* overlays */}
           <div className="pointer-events-none absolute bottom-4 left-1/2 hidden -translate-x-1/2 rounded-full border border-cream/[0.12] bg-deep/60 px-[13px] py-[7px] font-mono text-[10px] uppercase tracking-[0.16em] text-cream/45 backdrop-blur-[6px] md:block">
             Drag the gizmo · scroll to zoom · right-drag to pan
           </div>
         </div>
 
-        {/* ------------------------------------------ left panel */}
-        <aside className="m-4 rounded-2xl border border-cream/[0.12] bg-panel/90 p-5 shadow-[0_20px_60px_rgba(0,0,0,0.35)] backdrop-blur-xl lg:absolute lg:bottom-5 lg:left-5 lg:top-5 lg:m-0 lg:w-[272px] lg:overflow-y-auto">
-          <SectionLabel no="01" label="Printer" />
-          <div className="mb-2 font-mono text-[10px] uppercase tracking-[0.16em] text-cream/35">
-            Bambu Lab
-          </div>
-          <PrinterSelect value={printerId} onChange={setPrinterId} />
-
-          <div className="my-6 h-px bg-cream/[0.09]" />
-
-          <SectionLabel no="02" label="Transform" />
-          <div className="mb-5 grid grid-cols-3 gap-1 rounded-full border border-cream/[0.14] p-1">
-            {(
-              [
-                ["translate", "Move", MoveIcon],
-                ["rotate", "Rotate", RotateIcon],
-                ["scale", "Scale", ScaleIcon],
-              ] as const
-            ).map(([m, label, Icon]) => {
-              const on = mode === m;
+        {/* Left Dashboard Dock & Collapsible Drawer Container */}
+        <div className="z-20 p-4 lg:p-0 flex flex-col lg:flex-row lg:absolute lg:left-5 lg:top-5 lg:bottom-5 pointer-events-none gap-3">
+          {/* Vertical Icon Rail */}
+          <div className="pointer-events-auto flex lg:flex-col items-center gap-2 rounded-2xl border border-cream/[0.14] bg-panel/95 p-2 shadow-[0_20px_60px_rgba(0,0,0,0.4)] backdrop-blur-xl shrink-0 h-fit max-w-full overflow-x-auto lg:overflow-x-visible">
+            {[
+              { id: "printer" as const, label: "Printer Setup", icon: <PrinterIcon size={18} />},
+              { id: "transform" as const, label: "Transform", icon: <Box size={18} /> },
+              { id: "city" as const, label: "Manipulate City", icon: <Building2  size={18} /> },
+              { id: "revit" as const, label: "Revit Base Frame", icon: <SquareDimensions  size={18} /> },
+              ...(type !== "building" ? [{ id: "colors" as const, label: "Filament Colors", icon: <Palette  size={18} /> }] : []),
+            ].map((item) => {
+              const active = activeTab === item.id;
               return (
                 <button
-                  key={m}
-                  onClick={() => setMode(m)}
-                  className={`flex items-center justify-center gap-1.5 rounded-full py-[7px] text-[11.5px] transition-colors duration-200 ${
-                    on ? "bg-cream text-[var(--color-base)]" : "text-cream/60 hover:text-cream"
+                  key={item.id}
+                  type="button"
+                  title={item.label}
+                  onClick={() => setActiveTab(active ? null : item.id)}
+                  className={`group relative flex h-11 w-11 items-center justify-center rounded-xl transition-all duration-200 ${
+                    active
+                      ? "bg-cream text-[var(--color-base)] shadow-md scale-105"
+                      : "text-cream/65 hover:bg-cream/10 hover:text-cream"
                   }`}
                 >
-                  <Icon />
-                  {label}
+                  {item.icon}
+                  {/* Tooltip on Desktop */}
+                  <span className="pointer-events-none absolute left-14 z-30 hidden rounded-md bg-deep px-2.5 py-1 font-mono text-[10px] font-bold uppercase tracking-wider text-cream opacity-0 shadow-lg transition-opacity group-hover:opacity-100 lg:block whitespace-nowrap border border-cream/20">
+                    {item.label}
+                  </span>
                 </button>
               );
             })}
+
+            <div className="hidden lg:block my-1 h-px w-6 bg-cream/[0.12]" />
+
+            {/* Collapse/Expand Toggle Button */}
+            <button
+              type="button"
+              title={activeTab ? "Collapse Panel" : "Expand Panel"}
+              onClick={() => setActiveTab(activeTab ? null : "printer")}
+              className="pointer-events-auto hidden lg:flex h-9 w-9 items-center justify-center rounded-xl text-cream/40 transition-colors hover:bg-cream/10 hover:text-cream"
+            >
+              <motion.span
+                animate={{ rotate: activeTab ? 180 : 0 }}
+                transition={{ duration: 0.2 }}
+                className="text-[18px]"
+              >
+                ‹
+              </motion.span>
+            </button>
           </div>
 
-          <ValueGroup
-            label="Position"
-            unit="mm"
-            active={mode === "translate"}
-            values={tf.pos}
-            onActivate={() => setMode("translate")}
-            onReset={() => resetGroup("pos")}
-          />
-          <ValueGroup
-            label="Rotation"
-            unit="°"
-            active={mode === "rotate"}
-            values={tf.rot}
-            onActivate={() => setMode("rotate")}
-            onReset={() => resetGroup("rot")}
-          />
-          <ValueGroup
-            label="Scale"
-            unit="%"
-            active={mode === "scale"}
-            values={tf.scl}
-            onActivate={() => setMode("scale")}
-            onReset={() => resetGroup("scl")}
-          />
-
-          <p className="m-0 mt-4 font-mono text-[9.5px] leading-[1.7] uppercase tracking-[0.14em] text-cream/30">
-            Adjust with the gizmo in the viewport
-          </p>
-        </aside>
-
-        {/* ------------------------------------------ right panel */}
-        <aside className="m-4 mt-0 rounded-2xl border border-cream/[0.12] bg-panel/90 p-5 shadow-[0_20px_60px_rgba(0,0,0,0.35)] backdrop-blur-xl lg:absolute lg:right-5 lg:top-5 lg:m-0 lg:max-h-[calc(100%-40px)] lg:w-[288px] lg:overflow-y-auto">
-          <button
-            onClick={() => setCityOpen((o) => !o)}
-            className="flex w-full items-center justify-between text-left"
-          >
-            <SectionLabel no="03" label="Manipulate city" flush />
-            <motion.span
-              animate={{ rotate: cityOpen ? 180 : 0 }}
-              transition={{ duration: 0.25 }}
-              className="text-[11px] text-cream/50"
-              aria-hidden
-            >
-              ▾
-            </motion.span>
-          </button>
-
-          <AnimatePresence initial={false}>
-            {cityOpen && (
-              <motion.div
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: "auto", opacity: 1 }}
-                exit={{ height: 0, opacity: 0 }}
-                transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
-                className="overflow-hidden"
+          {/* Drawer Content Panel */}
+          <AnimatePresence mode="wait">
+            {activeTab && (
+              <motion.aside
+                key={activeTab}
+                initial={{ opacity: 0, x: -16, scale: 0.98 }}
+                animate={{ opacity: 1, x: 0, scale: 1 }}
+                exit={{ opacity: 0, x: -16, scale: 0.98 }}
+                transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+                className="pointer-events-auto rounded-2xl border border-cream/[0.14] bg-panel/95 p-5 shadow-[0_20px_60px_rgba(0,0,0,0.4)] backdrop-blur-xl lg:w-[310px] w-full lg:max-h-full lg:overflow-y-auto max-h-[55vh] overflow-y-auto"
               >
-                <div className="flex flex-col gap-5 pt-5">
-                  {layerSet.size === 0 ? (
+                <div className="mb-4 flex items-center justify-between border-b border-cream/[0.09] pb-3">
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-[10px] font-bold text-[var(--accent)] uppercase tracking-wider">
+                      {activeTab === "printer" && "01"}
+                      {activeTab === "transform" && "02"}
+                      {activeTab === "city" && "03"}
+                      {activeTab === "revit" && "04"}
+                      {activeTab === "colors" && "05"}
+                    </span>
+                    <h3 className="m-0 font-display text-[17px] font-medium capitalize text-cream">
+                      {activeTab === "printer" && "Printer Setup"}
+                      {activeTab === "transform" && "Transform"}
+                      {activeTab === "city" && "Manipulate City"}
+                      {activeTab === "revit" && "Revit Base Frame"}
+                      {activeTab === "colors" && "Filament Colors"}
+                    </h3>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab(null)}
+                    className="flex h-7 w-7 items-center justify-center rounded-lg text-cream/40 transition-colors hover:bg-cream/10 hover:text-cream"
+                    title="Close Panel"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                {/* Tab 1: Printer */}
+                {activeTab === "printer" && (
+                  <div className="flex flex-col gap-4">
+                    <div className="font-mono text-[10px] uppercase tracking-[0.16em] text-cream/45">
+                      Select 3D Printer Model
+                    </div>
+                    <PrinterSelect value={printerId} onChange={setPrinterId} />
+                    <div className="rounded-xl border border-cream/[0.12] bg-cream/[0.03] p-3.5 flex flex-col gap-2">
+                      <div className="flex justify-between text-[12px]">
+                        <span className="text-cream/55 font-mono text-[11px]">Bed Dimensions</span>
+                        <span className="font-mono font-bold text-cream">
+                          {printer.bed[0]} × {printer.bed[1]} × {printer.bed[2]} mm
+                        </span>
+                      </div>
+                      <div className="flex justify-between text-[12px]">
+                        <span className="text-cream/55 font-mono text-[11px]">Build Volume</span>
+                        <span className="font-mono text-cream/80">
+                          {((printer.bed[0] * printer.bed[1] * printer.bed[2]) / 1000000).toFixed(2)} L
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Tab 2: Transform */}
+                {activeTab === "transform" && (
+                  <div className="flex flex-col gap-4">
+                    <div className="grid grid-cols-3 gap-1 rounded-full border border-cream/[0.14] p-1">
+                      {(
+                        [
+                          ["translate", "Move", MoveIcon],
+                          ["rotate", "Rotate", RotateIcon],
+                          ["scale", "Scale", ScaleIcon],
+                        ] as const
+                      ).map(([m, label, Icon]) => {
+                        const on = mode === m;
+                        return (
+                          <button
+                            key={m}
+                            type="button"
+                            onClick={() => setMode(m)}
+                            className={`flex items-center justify-center gap-1.5 rounded-full py-[7px] text-[11.5px] transition-colors duration-200 ${
+                              on ? "bg-cream text-[var(--color-base)] font-medium" : "text-cream/60 hover:text-cream"
+                            }`}
+                          >
+                            <Icon />
+                            {label}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    <ValueGroup
+                      label="Position"
+                      unit="mm"
+                      active={mode === "translate"}
+                      values={tf.pos}
+                      onActivate={() => setMode("translate")}
+                      onReset={() => resetGroup("pos")}
+                    />
+                    <ValueGroup
+                      label="Rotation"
+                      unit="°"
+                      active={mode === "rotate"}
+                      values={tf.rot}
+                      onActivate={() => setMode("rotate")}
+                      onReset={() => resetGroup("rot")}
+                    />
+                    <ValueGroup
+                      label="Scale"
+                      unit="%"
+                      active={mode === "scale"}
+                      values={tf.scl}
+                      onActivate={() => setMode("scale")}
+                      onReset={() => resetGroup("scl")}
+                    />
+
                     <p className="m-0 font-mono text-[9.5px] leading-[1.7] uppercase tracking-[0.14em] text-cream/30">
-                      Layer controls appear once this tile&apos;s city layers
-                      are loaded
+                      Adjust with the gizmo in the 3D viewport
                     </p>
-                  ) : (
-                    <>
-                      {layerSet.has("small-building") && (
-                        <Slider
-                          label="Small building scale"
-                          value={cityCtl.small}
-                          min={50}
-                          max={150}
-                          suffix="%"
-                          onChange={(v) => setCtl("small", v)}
-                        />
-                      )}
-                      {layerSet.has("main-building") && (
-                        <Slider
-                          label="Large building scale"
-                          value={cityCtl.large}
-                          min={50}
-                          max={150}
-                          suffix="%"
-                          onChange={(v) => setCtl("large", v)}
-                        />
-                      )}
-                      {layerSet.has("terrain") && (
-                        <Slider
-                          label="Terrain height"
-                          value={cityCtl.terrain}
-                          min={20}
-                          max={200}
-                          suffix="%"
-                          onChange={(v) => setCtl("terrain", v)}
-                        />
-                      )}
-                      {layerSet.has("roads") && (
-                        <Slider
-                          label="Road scale"
-                          value={cityCtl.roads}
-                          min={50}
-                          max={200}
-                          suffix="%"
-                          onChange={(v) => setCtl("roads", v)}
-                        />
-                      )}
-                      {layerSet.has("trees") && (
-                        <Slider
-                          label="Tree scale"
-                          value={cityCtl.trees}
-                          min={50}
-                          max={150}
-                          suffix="%"
-                          onChange={(v) => setCtl("trees", v)}
-                        />
-                      )}
+                  </div>
+                )}
 
-                      {layerSet.has("roads") && (
-                        <Toggle
-                          label="Hide roads"
-                          on={cityCtl.hideRoads}
-                          onChange={(v) => setCtl("hideRoads", v)}
-                        />
-                      )}
-                      {layerSet.has("trees") && (
-                        <Toggle
-                          label="Hide trees"
-                          on={cityCtl.hideTrees}
-                          onChange={(v) => setCtl("hideTrees", v)}
-                        />
-                      )}
-                      {layerSet.has("grass") && (
-                        <Toggle
-                          label="Hide grass"
-                          on={cityCtl.hideGrass}
-                          onChange={(v) => setCtl("hideGrass", v)}
-                        />
-                      )}
+                {/* Tab 3: Manipulate City */}
+                {activeTab === "city" && (
+                  <div className="flex flex-col gap-4">
+                    {layerSet.size === 0 ? (
+                      <p className="m-0 font-mono text-[9.5px] leading-[1.7] uppercase tracking-[0.14em] text-cream/30">
+                        Layer controls appear once this tile&apos;s city layers are loaded
+                      </p>
+                    ) : (
+                      <>
+                        {layerSet.has("small-building") && (
+                          <Scrubber
+                            label="Small buildings"
+                            value={cityCtl.small}
+                            min={50}
+                            max={150}
+                            step={1}
+                            decimals={0}
+                            onValueChange={(v) => setCtl("small", v)}
+                          />
+                        )}
+                        {layerSet.has("main-building") && (
+                          <Scrubber
+                            label="Large buildings"
+                            value={cityCtl.large}
+                            min={50}
+                            max={150}
+                            step={1}
+                            decimals={0}
+                            onValueChange={(v) => setCtl("large", v)}
+                          />
+                        )}
+                        {layerSet.has("terrain") && (
+                          <Scrubber
+                            label="Terrain height"
+                            value={cityCtl.terrain}
+                            min={20}
+                            max={200}
+                            step={1}
+                            decimals={0}
+                            onValueChange={(v) => setCtl("terrain", v)}
+                          />
+                        )}
+                        {layerSet.has("roads") && (
+                          <Scrubber
+                            label="Road scale"
+                            value={cityCtl.roads}
+                            min={50}
+                            max={200}
+                            step={1}
+                            decimals={0}
+                            onValueChange={(v) => setCtl("roads", v)}
+                          />
+                        )}
+                        {layerSet.has("trees") && (
+                          <Scrubber
+                            label="Tree scale"
+                            value={cityCtl.trees}
+                            min={50}
+                            max={150}
+                            step={1}
+                            decimals={0}
+                            onValueChange={(v) => setCtl("trees", v)}
+                          />
+                        )}
 
-                      {/* Revit Sub-foundation Base Frame Layer Controls */}
-                      <div className="mt-2 flex flex-col gap-3 border-t border-cream/[0.09] pt-4">
-                        <Toggle
-                          label="Revit base frame layer"
-                          on={cityCtl.enableRevit}
-                          onChange={(v) => setCtl("enableRevit", v)}
-                        />
-                        {cityCtl.enableRevit && (
-                          <div className="flex flex-col gap-4 border-l border-[var(--accent)]/40 pl-3.5 pt-1">
-                            <Slider
-                              label={`Frame height (${(cityCtl.revitHeight / 100).toFixed(1)} cm)`}
-                              value={cityCtl.revitHeight}
-                              min={20}
-                              max={300}
-                              suffix="%"
-                              onChange={(v) => setCtl("revitHeight", v)}
-                            />
-                            {/* Uniform vs Independent toggle for    width/breadth */}
-                            <div className="flex items-center justify-between">
-                              <span className="text-[11.5px] text-cream/60">Uniform W+D</span>
+                        <div className="flex flex-col gap-2 pt-2 border-t border-cream/[0.09]">
+                          <span className="font-mono text-[10px] font-bold uppercase tracking-[0.16em] text-cream/45">
+                            Hide Layers
+                          </span>
+                          <div className="grid grid-cols-3 gap-1.5 rounded-xl border border-cream/[0.14] p-1.5 bg-cream/[0.03]">
+                            {layerSet.has("roads") && (
                               <button
-                                onClick={() => setCtl("revitUniformScale", !cityCtl.revitUniformScale)}
-                                aria-pressed={cityCtl.revitUniformScale}
-                                aria-label="Toggle uniform scale"
-                                className="relative inline-block h-[18px] w-[32px] rounded-full transition-colors duration-200"
-                                style={{
-                                  background: cityCtl.revitUniformScale
-                                    ? "var(--accent)"
-                                    : "rgba(var(--ink-rgb), 0.18)",
-                                }}
+  type="button"
+  onClick={() => setCtl("hideRoads", !cityCtl.hideRoads)}
+  className={`flex items-center justify-center gap-1.5 rounded-lg py-2 px-1 text-center font-mono text-[10.5px] font-bold uppercase tracking-wider transition-all duration-200 truncate ${
+    cityCtl.hideRoads
+      ? "bg-cream text-[var(--color-base)] shadow-md scale-[1.01]"
+      : "text-cream/65 hover:text-cream hover:bg-cream/[0.06]"
+  }`}
+>
+  <span>Roads</span>
+  <Road size={14} />
+</button>
+                            )}
+                            {layerSet.has("trees") && (
+                             <button
+  type="button"
+  onClick={() => setCtl("hideTrees", !cityCtl.hideTrees)}
+  className={`flex items-center justify-center gap-1.5 rounded-lg py-2 px-1 text-center font-mono text-[10.5px] font-bold uppercase tracking-wider transition-all duration-200 truncate ${
+    cityCtl.hideTrees
+      ? "bg-cream text-[var(--color-base)] shadow-md scale-[1.01]"
+      : "text-cream/65 hover:text-cream hover:bg-cream/[0.06]"
+  }`}
+>
+  <span>Trees</span>
+  <TreePine size={14} />
+</button>
+                            )}
+                            {layerSet.has("grass") && (
+                             <button
+  type="button"
+  onClick={() => setCtl("hideGrass", !cityCtl.hideGrass)}
+  className={`flex items-center justify-center gap-1.5 rounded-lg py-2 px-1 text-center font-mono text-[10.5px] font-bold uppercase tracking-wider transition-all duration-200 truncate ${
+    cityCtl.hideGrass
+      ? "bg-cream text-[var(--color-base)] shadow-md scale-[1.01]"
+                                    : "text-cream/65 hover:text-cream hover:bg-cream/[0.06]"
+                                }`}
                               >
-                                <motion.span
-                                  className="absolute top-[2px] h-[14px] w-[14px] rounded-full bg-cream"
-                                  animate={{ left: cityCtl.revitUniformScale ? 16 : 2 }}
-                                  transition={{ type: "spring", stiffness: 500, damping: 32 }}
-                                />
+                                <span>Grass</span>
+  <Shrub  size={14}/>
                               </button>
-                            </div>
-                            {cityCtl.revitUniformScale ? (
-                              <Slider
-                                label="Frame size (W+D)"
-                                value={cityCtl.revitUniform}
-                                min={50}
-                                max={200}
-                                suffix="%"
-                                onChange={(v) => setCtl("revitUniform", v)}
-                              />
-                            ) : (
-                              <>
-                                <Slider
-                                  label="Frame width"
-                                  value={cityCtl.revitWidth}
-                                  min={50}
-                                  max={200}
-                                  suffix="%"
-                                  onChange={(v) => setCtl("revitWidth", v)}
-                                />
-                                <Slider
-                                  label="Frame breadth"
-                                  value={cityCtl.revitBreadth}
-                                  min={50}
-                                  max={200}
-                                  suffix="%"
-                                  onChange={(v) => setCtl("revitBreadth", v)}
-                                />
-                              </>
                             )}
                           </div>
+                        </div>
+                      </>
+                    )}
+
+                    <p className="m-0 border-t border-cream/[0.09] pt-3 font-mono text-[9.5px] leading-[1.7] uppercase tracking-[0.14em] text-cream/30">
+                      Non-destructive — hidden layers stay out of the print
+                    </p>
+                  </div>
+                )}
+
+                {/* Tab 4: Revit Base Frame */}
+                {activeTab === "revit" && (
+                  <div className="flex flex-col gap-4">
+                    <Switch
+                      label="Revit base frame layer"
+                      checked={cityCtl.enableRevit}
+                      onCheckedChange={(v) => setCtl("enableRevit", v)}
+                    />
+                    {cityCtl.enableRevit && (
+                      <div className="flex flex-col gap-3.5 border-l border-[var(--accent)]/40 pl-3.5 pt-1">
+                        <Scrubber
+                          label={`Frame height (${(cityCtl.revitHeight / 100).toFixed(1)} cm)`}
+                          value={cityCtl.revitHeight}
+                          min={20}
+                          max={300}
+                          step={1}
+                          decimals={0}
+                          onValueChange={(v) => setCtl("revitHeight", v)}
+                        />
+                        
+                        <Switch
+                          label="Uniform W+D"
+                          checked={cityCtl.revitUniformScale}
+                          onCheckedChange={(v) => setCtl("revitUniformScale", v)}
+                        />
+
+                        {cityCtl.revitUniformScale ? (
+                          <Scrubber
+                            label="Frame size (W+D)"
+                            value={cityCtl.revitUniform}
+                            min={50}
+                            max={200}
+                            step={1}
+                            decimals={0}
+                            onValueChange={(v) => setCtl("revitUniform", v)}
+                          />
+                        ) : (
+                          <>
+                            <Scrubber
+                              label="Frame width"
+                              value={cityCtl.revitWidth}
+                              min={50}
+                              max={200}
+                              step={1}
+                              decimals={0}
+                              onValueChange={(v) => setCtl("revitWidth", v)}
+                            />
+                            <Scrubber
+                              label="Frame breadth"
+                              value={cityCtl.revitBreadth}
+                              min={50}
+                              max={200}
+                              step={1}
+                              decimals={0}
+                              onValueChange={(v) => setCtl("revitBreadth", v)}
+                            />
+                          </>
                         )}
                       </div>
-                    </>
-                  )}
+                    )}
+                  </div>
+                )}
 
-                  <p className="m-0 border-t border-cream/[0.09] pt-4 font-mono text-[9.5px] leading-[1.7] uppercase tracking-[0.14em] text-cream/30">
-                    Non-destructive — hidden layers stay out of the print
-                  </p>
-                </div>
-              </motion.div>
+                {/* Tab 5: Filament Colors */}
+                {activeTab === "colors" && type !== "building" && (
+                  <div className="flex flex-col gap-4">
+                    <div className="flex items-center justify-between">
+                      <span className="font-mono text-[11px] font-bold uppercase tracking-wider text-cream/70">
+                        Multi-color Printing
+                      </span>
+                      <Switch
+                        checked={cityCtl.enableColors}
+                        onCheckedChange={(v) => setCtl("enableColors", v)}
+                      />
+                    </div>
+
+                    {cityCtl.enableColors ? (
+                      <div className="flex flex-col gap-3 pt-2">
+                        {availableColorLayers.length > 1 && (
+                          <div className="grid grid-cols-2 gap-1.5 rounded-xl border border-cream/[0.14] p-1.5 bg-cream/[0.03]">
+                            {availableColorLayers.map((l) => {
+                              const active = l.key === activeColorTab;
+                              return (
+                                <button
+                                  key={l.key}
+                                  type="button"
+                                  onClick={() => setActiveColorTab(l.key)}
+                                  className={`rounded-lg py-1.5 px-2.5 text-center font-mono text-[10.5px] font-bold uppercase tracking-wider transition-all duration-200 truncate ${
+                                    active
+                                      ? "bg-cream text-[var(--color-base)] shadow-md scale-[1.01]"
+                                      : "text-cream/65 hover:text-cream hover:bg-cream/[0.06]"
+                                  }`}
+                                >
+                                  {l.label}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+
+                        {activeColorTab === "trees" && layerSet.has("trees") && (
+                          <FilamentColorCard
+                            title="TREES COLOUR"
+                            value={cityCtl.layerColors.trees || DEFAULT_LAYER_COLORS.trees}
+                            onChange={(hex) => setLayerColor("trees", hex)}
+                          />
+                        )}
+                        {activeColorTab === "terrain" && layerSet.has("terrain") && (
+                          <FilamentColorCard
+                            title="TERRAIN COLOUR"
+                            value={cityCtl.layerColors.terrain || DEFAULT_LAYER_COLORS.terrain}
+                            onChange={(hex) => setLayerColor("terrain", hex)}
+                          />
+                        )}
+                        {activeColorTab === "grass" && layerSet.has("grass") && (
+                          <FilamentColorCard
+                            title="GRASS COLOUR"
+                            value={cityCtl.layerColors.grass || DEFAULT_LAYER_COLORS.grass}
+                            onChange={(hex) => setLayerColor("grass", hex)}
+                          />
+                        )}
+                        {activeColorTab === "small-building" && layerSet.has("small-building") && (
+                          <FilamentColorCard
+                            title="SMALL BUILDINGS COLOUR"
+                            value={cityCtl.layerColors["small-building"] || DEFAULT_LAYER_COLORS["small-building"]}
+                            onChange={(hex) => setLayerColor("small-building", hex)}
+                          />
+                        )}
+                        {activeColorTab === "main-building" && layerSet.has("main-building") && (
+                          <FilamentColorCard
+                            title="MAIN BUILDING COLOUR"
+                            value={cityCtl.layerColors["main-building"] || DEFAULT_LAYER_COLORS["main-building"]}
+                            onChange={(hex) => setLayerColor("main-building", hex)}
+                          />
+                        )}
+                        {activeColorTab === "roads" && layerSet.has("roads") && (
+                          <FilamentColorCard
+                            title="ROADS COLOUR"
+                            value={cityCtl.layerColors.roads || DEFAULT_LAYER_COLORS.roads}
+                            onChange={(hex) => setLayerColor("roads", hex)}
+                          />
+                        )}
+                      </div>
+                    ) : (
+                      <p className="m-0 font-mono text-[10px] leading-[1.7] uppercase tracking-[0.14em] text-cream/40">
+                        Enable filament colors to customize color palette for 3MF multi-color exporting.
+                      </p>
+                    )}
+                  </div>
+                )}
+              </motion.aside>
             )}
           </AnimatePresence>
-
-          {type !== "building" && (
-            <div className="mt-5 border-t border-cream/[0.09] pt-4">
-              <div className="mb-3 flex items-center justify-between">
-                <SectionLabel no="04" label="Filament Colors" flush />
-                <Toggle
-                  label="Add Colors"
-                  on={cityCtl.enableColors}
-                  onChange={(v) => setCtl("enableColors", v)}
-                />
-              </div>
-
-              <AnimatePresence initial={false}>
-                {cityCtl.enableColors && (
-                  <motion.div
-                    initial={{ height: 0, opacity: 0 }}
-                    animate={{ height: "auto", opacity: 1 }}
-                    exit={{ height: 0, opacity: 0 }}
-                    transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
-                    className="flex flex-col gap-3 overflow-hidden pt-2"
-                  >
-                    {/* Layer selector tabs */}
-                    {availableColorLayers.length > 1 && (
-                      <div className="grid grid-cols-2 gap-1.5 rounded-xl border border-cream/[0.14] p-1.5 bg-cream/[0.03]">
-                        {availableColorLayers.map((l) => {
-                          const active = l.key === activeColorTab;
-                          return (
-                            <button
-                              key={l.key}
-                              type="button"
-                              onClick={() => setActiveColorTab(l.key)}
-                              className={`rounded-lg py-1.5 px-2.5 text-center font-mono text-[10.5px] font-bold uppercase tracking-wider transition-all duration-200 truncate ${
-                                active
-                                  ? "bg-cream text-[var(--color-base)] shadow-md scale-[1.01]"
-                                  : "text-cream/65 hover:text-cream hover:bg-cream/[0.06]"
-                              }`}
-                            >
-                              {l.label}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
-
-                    {/* Active Layer Filament Color Card */}
-                    {activeColorTab === "trees" && layerSet.has("trees") && (
-                      <FilamentColorCard
-                        title="TREES COLOUR"
-                        value={cityCtl.layerColors.trees || DEFAULT_LAYER_COLORS.trees}
-                        onChange={(hex) => setLayerColor("trees", hex)}
-                      />
-                    )}
-                    {activeColorTab === "terrain" && layerSet.has("terrain") && (
-                      <FilamentColorCard
-                        title="TERRAIN COLOUR"
-                        value={cityCtl.layerColors.terrain || DEFAULT_LAYER_COLORS.terrain}
-                        onChange={(hex) => setLayerColor("terrain", hex)}
-                      />
-                    )}
-                    {activeColorTab === "grass" && layerSet.has("grass") && (
-                      <FilamentColorCard
-                        title="GRASS COLOUR"
-                        value={cityCtl.layerColors.grass || DEFAULT_LAYER_COLORS.grass}
-                        onChange={(hex) => setLayerColor("grass", hex)}
-                      />
-                    )}
-                    {activeColorTab === "small-building" && layerSet.has("small-building") && (
-                      <FilamentColorCard
-                        title="SMALL BUILDINGS COLOUR"
-                        value={cityCtl.layerColors["small-building"] || DEFAULT_LAYER_COLORS["small-building"]}
-                        onChange={(hex) => setLayerColor("small-building", hex)}
-                      />
-                    )}
-                    {activeColorTab === "main-building" && layerSet.has("main-building") && (
-                      <FilamentColorCard
-                        title="MAIN BUILDING COLOUR"
-                        value={cityCtl.layerColors["main-building"] || DEFAULT_LAYER_COLORS["main-building"]}
-                        onChange={(hex) => setLayerColor("main-building", hex)}
-                      />
-                    )}
-                    {activeColorTab === "roads" && layerSet.has("roads") && (
-                      <FilamentColorCard
-                        title="ROADS COLOUR"
-                        value={cityCtl.layerColors.roads || DEFAULT_LAYER_COLORS.roads}
-                        onChange={(hex) => setLayerColor("roads", hex)}
-                      />
-                    )}
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
-          )}
-        </aside>
+        </div>
       </div>
     </div>
   );
 }
 
-/* ---------------------------------------------------------- pieces */
+/* Helper Components */
 
 function PrinterSelect({
   value,
@@ -952,76 +1057,6 @@ function ValueGroup({
   );
 }
 
-function Slider({
-  label,
-  value,
-  min,
-  max,
-  suffix,
-  onChange,
-}: {
-  label: string;
-  value: number;
-  min: number;
-  max: number;
-  suffix: string;
-  onChange: (v: number) => void;
-}) {
-  const pct = ((value - min) / (max - min)) * 100;
-  return (
-    <div>
-      <div className="mb-2 flex items-center justify-between">
-        <span className="text-[12.5px] text-cream/75">{label}</span>
-        <span className="font-mono text-[11px] text-cream/50">
-          {value}
-          {suffix}
-        </span>
-      </div>
-      <input
-        type="range"
-        min={min}
-        max={max}
-        value={value}
-        onChange={(e) => onChange(Number(e.target.value))}
-        className="fc-range"
-        style={{ "--p": `${pct}%` } as React.CSSProperties}
-      />
-    </div>
-  );
-}
-
-function Toggle({
-  label,
-  on,
-  onChange,
-}: {
-  label: string;
-  on: boolean;
-  onChange: (v: boolean) => void;
-}) {
-  return (
-    <div className="flex items-center justify-between">
-      <span className="text-[12.5px] text-cream/75">{label}</span>
-      <button
-        onClick={() => onChange(!on)}
-        aria-pressed={on}
-        aria-label={label}
-        className="relative inline-block h-[18px] w-[32px] rounded-full transition-colors duration-200"
-        style={{
-          background: on ? "var(--accent)" : "rgba(var(--ink-rgb), 0.18)",
-        }}
-      >
-        <motion.span
-          className="absolute top-[2px] h-[14px] w-[14px] rounded-full bg-cream"
-          animate={{ left: on ? 16 : 2 }}
-          transition={{ type: "spring", stiffness: 500, damping: 32 }}
-        />
-      </button>
-    </div>
-  );
-}
-
-/* Icons */
 function MoveIcon() {
   return (
     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden>
@@ -1035,6 +1070,7 @@ function MoveIcon() {
     </svg>
   );
 }
+
 function RotateIcon() {
   return (
     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden>
@@ -1048,6 +1084,7 @@ function RotateIcon() {
     </svg>
   );
 }
+
 function ScaleIcon() {
   return (
     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden>
@@ -1133,3 +1170,4 @@ function FilamentColorCard({
     </div>
   );
 }
+
