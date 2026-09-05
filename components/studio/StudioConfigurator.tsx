@@ -22,8 +22,8 @@ import { TempAccessModal } from "@/components/TempAccessModal";
 import type { GizmoMode } from "./StudioScene";
 import { exportTo3MF, collectTransformedMeshes } from "@/lib/3mfExporter";
 import Scrubber from "../ui/Scrubber";
-import Switch from "../ui/Switch";
 import { Box, Building2, Palette, PrinterIcon, Road, Shrub, SquareDimensions, TreePine } from "lucide-react";
+import SegmentedToggle from "../ui/Switch";
 
 
 const StudioScene = dynamic(() => import("./StudioScene"), {
@@ -77,7 +77,7 @@ export function StudioConfigurator({
 
   // Active dashboard tab state
   type StudioTab = "printer" | "transform" | "city" | "revit" | "colors";
-  const [activeTab, setActiveTab] = useState<StudioTab | null>("printer");
+  const [activeTab, setActiveTab] = useState<StudioTab | null>("city");
 
   // Live "Manipulate city" controls
   const [cityCtl, setCityCtl] = useState<CityControls>(CITY_DEFAULTS);
@@ -427,9 +427,10 @@ export function StudioConfigurator({
           {/* Vertical Icon Rail */}
           <div className="pointer-events-auto flex lg:flex-col items-center gap-2 rounded-2xl border border-cream/[0.14] bg-panel/95 p-2 shadow-[0_20px_60px_rgba(0,0,0,0.4)] backdrop-blur-xl shrink-0 h-fit max-w-full overflow-x-auto lg:overflow-x-visible">
             {[
+              { id: "city" as const, label: "Manipulate City", icon: <Building2  size={18} /> },
               { id: "printer" as const, label: "Printer Setup", icon: <PrinterIcon size={18} />},
               { id: "transform" as const, label: "Transform", icon: <Box size={18} /> },
-              { id: "city" as const, label: "Manipulate City", icon: <Building2  size={18} /> },
+              
               { id: "revit" as const, label: "Revit Base Frame", icon: <SquareDimensions  size={18} /> },
               ...(type !== "building" ? [{ id: "colors" as const, label: "Filament Colors", icon: <Palette  size={18} /> }] : []),
             ].map((item) => {
@@ -488,9 +489,9 @@ export function StudioConfigurator({
                 <div className="mb-4 flex items-center justify-between border-b border-cream/[0.09] pb-3">
                   <div className="flex items-center gap-2">
                     <span className="font-mono text-[10px] font-bold text-[var(--accent)] uppercase tracking-wider">
-                      {activeTab === "printer" && "01"}
-                      {activeTab === "transform" && "02"}
-                      {activeTab === "city" && "03"}
+                      {activeTab === "printer" && "02"}
+                      {activeTab === "transform" && "03"}
+                      {activeTab === "city" && "01"}
                       {activeTab === "revit" && "04"}
                       {activeTab === "colors" && "05"}
                     </span>
@@ -721,7 +722,7 @@ export function StudioConfigurator({
                 {/* Tab 4: Revit Base Frame */}
                 {activeTab === "revit" && (
                   <div className="flex flex-col gap-4">
-                    <Switch
+                    <SegmentedToggle
                       label="Revit base frame layer"
                       checked={cityCtl.enableRevit}
                       onCheckedChange={(v) => setCtl("enableRevit", v)}
@@ -738,7 +739,7 @@ export function StudioConfigurator({
                           onValueChange={(v) => setCtl("revitHeight", v)}
                         />
                         
-                        <Switch
+                        <SegmentedToggle
                           label="Uniform W+D"
                           checked={cityCtl.revitUniformScale}
                           onCheckedChange={(v) => setCtl("revitUniformScale", v)}
@@ -788,7 +789,7 @@ export function StudioConfigurator({
                       <span className="font-mono text-[11px] font-bold uppercase tracking-wider text-cream/70">
                         Multi-color Printing
                       </span>
-                      <Switch
+                      <SegmentedToggle
                         checked={cityCtl.enableColors}
                         onCheckedChange={(v) => setCtl("enableColors", v)}
                       />
