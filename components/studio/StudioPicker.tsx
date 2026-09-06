@@ -5,6 +5,9 @@ import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import type { StudioCity, StudioBuilding } from "@/lib/studio";
 import { fetchStudioCities, fetchStudioBuildings } from "@/app/studio/actions";
+import { SpotlightCard } from "../ui/SpotlightCard";
+import { ShinyText } from "../ui/ShinyText";
+import { StepTimeline } from "../ui/StepLine";
 
 const ease = [0.22, 1, 0.36, 1] as const;
 
@@ -24,7 +27,8 @@ export function StudioPicker({
   const [category, setCategory] = useState<CategoryType | null>(null);
   const [selectedCountry, setSelectedCountry] = useState<string | null>(null);
   const [citySlug, setCitySlug] = useState<string | null>(null);
-
+const CITY_STEPS = ["Category", "Country", "City", "District"];
+const BUILDING_STEPS = ["Category", "Country", "Building"];
   useEffect(() => {
     if (!initialCities || initialCities.length === 0) {
       fetchStudioCities().then((res) => setCities(res));
@@ -91,9 +95,27 @@ export function StudioPicker({
     if (!citySlug) return null;
     return cities.find((c) => c.slug === citySlug) ?? null;
   }, [cities, citySlug]);
+const currentStepNum = useMemo(() => {
+  if (!category) return 1;
+  if (!selectedCountry) return 2;
+  if (category === "buildings") return 3;
+  // cities flow
+  if (!city) return 3;
+  return 4;
+}, [category, selectedCountry, city]);
 
+const stepLabels = category === "buildings" ? BUILDING_STEPS : CITY_STEPS;
   return (
-    <div className="mx-auto w-full max-w-[1000px] px-6 py-14 md:py-20">
+    <div className="relative mx-auto w-full max-w-[1000px] px-6 py-14 md:py-20">
+      {/* ambient animated glow */}
+      <motion.div
+        aria-hidden
+        className="pointer-events-none absolute -top-40 left-1/2 -z-10 h-[420px] w-[620px] -translate-x-1/2 rounded-full blur-[120px]"
+        style={{ background: "var(--accent)", opacity: 0.12 }}
+        animate={{ scale: [1, 1.15, 1], opacity: [0.1, 0.16, 0.1] }}
+        transition={{ duration: 8, repeat: Infinity, ease: "easeInOut" }}
+      />
+
       <AnimatePresence mode="wait">
         {/* ---------------------------------- STEP 01: CATEGORY SELECTION */}
         {!category ? (
@@ -104,71 +126,76 @@ export function StudioPicker({
             exit={{ opacity: 0, y: -14 }}
             transition={{ duration: 0.4, ease }}
           >
-            <div
+            {/* <div
               className="mb-[18px] font-mono text-[11px] font-bold uppercase tracking-[0.3em]"
               style={{ color: "var(--accent)" }}
             >
               The Studio · Step 01
-            </div>
-            <h1 className="m-0 mb-3 font-display text-[40px] font-normal leading-[1.03] md:text-[52px]">
-              What would you like to explore?
-            </h1>
+            </div> */}
+<StepTimeline steps={stepLabels} currentStep={currentStepNum} />
+            <ShinyText
+              text="What would you like to explore?"
+              className="m-0 mb-3 font-display text-[40px] font-normal leading-[1.03] md:text-[52px]"
+            />
+
             <p className="m-0 mb-11 max-w-[500px] text-[15px] leading-[1.7] text-cream/[0.62]">
               Choose between full 3D printable city tiles or individual landmark buildings.
             </p>
 
             <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
               {/* Option 1: City Models */}
-              <motion.button
-                whileHover={{ y: -4 }}
-                transition={{ duration: 0.3 }}
+              <SpotlightCard
+                className="p-8"
                 onClick={() => {
                   setCategory("cities");
                   setSelectedCountry(null);
                   setCitySlug(null);
                 }}
-                className="group relative overflow-hidden rounded-2xl border border-cream/[0.14] bg-panel p-8 text-left transition-colors duration-300 hover:border-[color:var(--accent)] cursor-pointer"
               >
-                <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-cream/15 bg-cream/[0.04] px-3 py-1 font-mono text-[10px] font-semibold uppercase tracking-[0.2em] text-cream/70">
+                {/* <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-cream/15 bg-cream/[0.04] px-3 py-1 font-mono text-[10px] font-semibold uppercase tracking-[0.2em] text-cream/70">
                   <span>🌆</span> 3D Map Tiles
-                </div>
+                </div> */}
                 <h2 className="mb-2 font-display text-[30px] font-medium text-cream group-hover:text-[color:var(--accent)] transition-colors">
                   City Models
                 </h2>
                 <p className="mb-6 text-[14px] leading-[1.6] text-cream/60">
                   Browse 3D printable urban tiles, districts, and complete city blocks modeled to scale.
                 </p>
-                <div className="font-mono text-[11px] font-bold uppercase tracking-[0.18em] flex items-center justify-between" style={{ color: "var(--accent)" }}>
+                <div
+                  className="font-mono text-[11px] font-bold uppercase tracking-[0.18em] flex items-center justify-between"
+                  style={{ color: "var(--accent)" }}
+                >
                   <span>Explore Cities</span>
                   <span className="transition-transform duration-300 group-hover:translate-x-1">→</span>
                 </div>
-              </motion.button>
+              </SpotlightCard>
 
               {/* Option 2: Standalone Buildings */}
-              <motion.button
-                whileHover={{ y: -4 }}
-                transition={{ duration: 0.3 }}
+              <SpotlightCard
+                className="p-8"
                 onClick={() => {
                   setCategory("buildings");
                   setSelectedCountry(null);
                   setCitySlug(null);
                 }}
-                className="group relative overflow-hidden rounded-2xl border border-cream/[0.14] bg-panel p-8 text-left transition-colors duration-300 hover:border-[color:var(--accent)] cursor-pointer"
               >
-                <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-cream/15 bg-cream/[0.04] px-3 py-1 font-mono text-[10px] font-semibold uppercase tracking-[0.2em] text-cream/70">
+                {/* <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-cream/15 bg-cream/[0.04] px-3 py-1 font-mono text-[10px] font-semibold uppercase tracking-[0.2em] text-cream/70">
                   <span>🏛️</span> Landmark Buildings
-                </div>
+                </div> */}
                 <h2 className="mb-2 font-display text-[30px] font-medium text-cream group-hover:text-[color:var(--accent)] transition-colors">
                   Buildings
                 </h2>
                 <p className="mb-6 text-[14px] leading-[1.6] text-cream/60">
                   Browse individual 3D printable landmark skyscrapers, towers, and iconic architecture.
                 </p>
-                <div className="font-mono text-[11px] font-bold uppercase tracking-[0.18em] flex items-center justify-between" style={{ color: "var(--accent)" }}>
+                <div
+                  className="font-mono text-[11px] font-bold uppercase tracking-[0.18em] flex items-center justify-between"
+                  style={{ color: "var(--accent)" }}
+                >
                   <span>Explore Buildings</span>
                   <span className="transition-transform duration-300 group-hover:translate-x-1">→</span>
                 </div>
-              </motion.button>
+              </SpotlightCard>
             </div>
           </motion.div>
         ) : !selectedCountry ? (
@@ -187,12 +214,13 @@ export function StudioPicker({
               <span aria-hidden>←</span> Back to options
             </button>
 
-            <div
+            {/* <div
               className="mb-[18px] font-mono text-[11px] font-bold uppercase tracking-[0.3em]"
               style={{ color: "var(--accent)" }}
             >
               The Studio · Step 02
-            </div>
+            </div> */}
+            <StepTimeline steps={stepLabels} currentStep={currentStepNum} />
             <h1 className="m-0 mb-3 font-display text-[40px] font-normal leading-[1.03] md:text-[52px]">
               Start with a country.
             </h1>
@@ -215,21 +243,13 @@ export function StudioPicker({
               ) : (
                 <div className="grid grid-cols-1 gap-[14px] sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
                   {cityCountries.map((c, i) => (
-                    <motion.button
+                    <SpotlightCard
                       key={c.country}
-                      initial={{ opacity: 0, y: 16 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ duration: 0.45, delay: i * 0.04, ease }}
+                      className="p-6"
                       disabled={!c.isAvailable}
-                      onClick={() => {
+                     onClick={() => {
                         if (c.isAvailable) setSelectedCountry(c.country);
                       }}
-                      whileHover={c.isAvailable ? { y: -4 } : undefined}
-                      className={`group relative overflow-hidden rounded-xl border p-6 text-left transition-colors duration-300 ${
-                        c.isAvailable
-                          ? "cursor-pointer border-cream/[0.14] bg-panel hover:border-[color:var(--accent)]"
-                          : "stripe-fill cursor-not-allowed border-cream/[0.08] opacity-60"
-                      }`}
                     >
                       <div
                         className={`font-display text-[24px] font-medium ${
@@ -256,7 +276,7 @@ export function StudioPicker({
                           coming soon
                         </div>
                       )}
-                    </motion.button>
+                    </SpotlightCard>
                   ))}
                 </div>
               )
@@ -272,21 +292,13 @@ export function StudioPicker({
             ) : (
               <div className="grid grid-cols-1 gap-[14px] sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
                 {buildingCountries.map((c, i) => (
-                  <motion.button
+                  <SpotlightCard
                     key={c.country}
-                    initial={{ opacity: 0, y: 16 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.45, delay: i * 0.04, ease }}
+                    className="p-6"
                     disabled={!c.isAvailable}
                     onClick={() => {
                       if (c.isAvailable) setSelectedCountry(c.country);
                     }}
-                    whileHover={c.isAvailable ? { y: -4 } : undefined}
-                    className={`group relative overflow-hidden rounded-xl border p-6 text-left transition-colors duration-300 ${
-                      c.isAvailable
-                        ? "cursor-pointer border-cream/[0.14] bg-panel hover:border-[color:var(--accent)]"
-                        : "stripe-fill cursor-not-allowed border-cream/[0.08] opacity-60"
-                    }`}
                   >
                     <div
                       className={`font-display text-[24px] font-medium ${
@@ -313,7 +325,7 @@ export function StudioPicker({
                         coming soon
                       </div>
                     )}
-                  </motion.button>
+                  </SpotlightCard>
                 ))}
               </div>
             )}
@@ -334,12 +346,13 @@ export function StudioPicker({
               <span aria-hidden>←</span> All countries
             </button>
 
-            <div
+            {/* <div
               className="mb-[18px] font-mono text-[11px] font-bold uppercase tracking-[0.3em]"
               style={{ color: "var(--accent)" }}
             >
               The Studio · Step 03
-            </div>
+            </div> */}
+            <StepTimeline steps={stepLabels} currentStep={currentStepNum} />
             <h1 className="m-0 mb-3 font-display text-[40px] font-normal leading-[1.03] md:text-[52px]">
               {selectedCountry}. <span className="italic">Select a city.</span>
             </h1>
@@ -354,21 +367,13 @@ export function StudioPicker({
                 const readyCount = c.locations.filter((loc) => loc.completed !== false).length;
 
                 return (
-                  <motion.button
+                  <SpotlightCard
                     key={c.slug}
-                    initial={{ opacity: 0, y: 16 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.45, delay: i * 0.04, ease }}
+                    className="p-5"
                     disabled={!isCityAvailable}
-                    onClick={() => {
+                   onClick={() => {
                       if (isCityAvailable) setCitySlug(c.slug);
                     }}
-                    whileHover={isCityAvailable ? { y: -4 } : undefined}
-                    className={`group relative overflow-hidden rounded-xl border p-5 text-left transition-colors duration-300 ${
-                      isCityAvailable
-                        ? "cursor-pointer border-cream/[0.14] bg-panel hover:border-[color:var(--accent)]"
-                        : "stripe-fill cursor-not-allowed border-cream/[0.08] opacity-60"
-                    }`}
                   >
                     <div
                       className={`font-display text-[22px] font-medium ${
@@ -393,7 +398,7 @@ export function StudioPicker({
                         coming soon
                       </div>
                     )}
-                  </motion.button>
+                  </SpotlightCard>
                 );
               })}
             </div>
@@ -414,12 +419,13 @@ export function StudioPicker({
               <span aria-hidden>←</span> Cities in {selectedCountry}
             </button>
 
-            <div
+            {/* <div
               className="mb-[18px] font-mono text-[11px] font-bold uppercase tracking-[0.3em]"
               style={{ color: "var(--accent)" }}
             >
               The Studio · Step 04
-            </div>
+            </div> */}
+            <StepTimeline steps={stepLabels} currentStep={currentStepNum} />
             <h1 className="m-0 mb-3 font-display text-[40px] font-normal leading-[1.03] md:text-[52px]">
               {city.name}. <span className="italic">Now the block.</span>
             </h1>
@@ -432,25 +438,17 @@ export function StudioPicker({
               {city.locations.map((loc, i) => {
                 const isReady = loc.completed !== false;
                 return (
-                  <motion.button
+                  <SpotlightCard
                     key={loc.slug}
-                    initial={{ opacity: 0, y: 16 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.45, delay: i * 0.05, ease }}
+                    className="flex items-center justify-between gap-4 px-6 py-5"
                     disabled={!isReady}
-                    onClick={() => {
+                   onClick={() => {
                       if (isReady) {
                         router.push(
                           `/studio/configure?type=city&city=${city.slug}&location=${loc.slug}`
                         );
                       }
                     }}
-                    whileHover={isReady ? { y: -3 } : undefined}
-                    className={`group flex items-center justify-between gap-4 rounded-xl border px-6 py-5 text-left transition-colors duration-300 ${
-                      isReady
-                        ? "cursor-pointer border-cream/[0.14] bg-panel hover:border-[color:var(--accent)]"
-                        : "stripe-fill cursor-not-allowed border-cream/[0.08] opacity-55"
-                    }`}
                   >
                     <div>
                       <div className="flex items-center gap-2.5">
@@ -484,7 +482,7 @@ export function StudioPicker({
                         </span>
                       )}
                     </div>
-                  </motion.button>
+                  </SpotlightCard>
                 );
               })}
             </div>
@@ -505,12 +503,13 @@ export function StudioPicker({
               <span aria-hidden>←</span> All countries
             </button>
 
-            <div
+            {/* <div
               className="mb-[18px] font-mono text-[11px] font-bold uppercase tracking-[0.3em]"
               style={{ color: "var(--accent)" }}
             >
               The Studio · Step 03
-            </div>
+            </div> */}
+            <StepTimeline steps={stepLabels} currentStep={currentStepNum} />
             <h1 className="m-0 mb-3 font-display text-[40px] font-normal leading-[1.03] md:text-[52px]">
               {selectedCountry}. <span className="italic">Select a building.</span>
             </h1>
@@ -522,11 +521,9 @@ export function StudioPicker({
               {countryBuildings.map((b, i) => {
                 const isReady = b.available !== false;
                 return (
-                  <motion.button
+                  <SpotlightCard
                     key={b.slug}
-                    initial={{ opacity: 0, y: 16 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.45, delay: i * 0.05, ease }}
+                    className="flex items-center justify-between gap-4 px-6 py-5"
                     disabled={!isReady}
                     onClick={() => {
                       if (isReady) {
@@ -535,12 +532,6 @@ export function StudioPicker({
                         );
                       }
                     }}
-                    whileHover={isReady ? { y: -3 } : undefined}
-                    className={`group flex items-center justify-between gap-4 rounded-xl border px-6 py-5 text-left transition-colors duration-300 ${
-                      isReady
-                        ? "cursor-pointer border-cream/[0.14] bg-panel hover:border-[color:var(--accent)]"
-                        : "stripe-fill cursor-not-allowed border-cream/[0.08] opacity-55"
-                    }`}
                   >
                     <div>
                       <div className="flex items-center gap-2.5">
@@ -576,7 +567,7 @@ export function StudioPicker({
                         </span>
                       )}
                     </div>
-                  </motion.button>
+                  </SpotlightCard>
                 );
               })}
             </div>

@@ -1,12 +1,13 @@
 import { Nav } from "@/components/Nav";
 import { Hero } from "@/components/Hero";
 import { Marquee } from "@/components/Marquee";
-import { Collection } from "@/components/Collection";
 import { Film } from "@/components/Film";
-import { Craft } from "@/components/Craft";
+import { Craft, ImageSlideshow } from "@/components/Craft";
 import { ModelShowcase } from "@/components/ModelShowcase";
+import { Milestones } from "@/components/Milestones";
 import { Configurator } from "@/components/Configurator";
 import { Support } from "@/components/Support";
+import { FAQ } from "@/components/FAQ";
 import { Footer } from "@/components/Footer";
 import { createClient } from "@/lib/supabase/server";
 import { toNavUser } from "@/lib/user";
@@ -24,11 +25,14 @@ export default async function Home() {
         <Hero />
         <Marquee />
         <Film />
-        <Collection />
+        {/* <Collection /> */}
         <Craft />
+        <ImageSlideshow />
         <ModelShowcase />
+        <Milestones />
         <Configurator />
         <Support />
+        <FAQ />
       </main>
       <Footer />
       {/* <AccentControl /> */}

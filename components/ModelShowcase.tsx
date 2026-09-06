@@ -36,12 +36,12 @@ export function ModelShowcase() {
     >
       <div className="mx-auto mb-12 max-w-[640px] text-center">
         <Reveal>
-          <div
+          {/* <div
             className="mb-[18px] font-mono text-[11px] font-bold uppercase tracking-[0.3em]"
             style={{ color: "var(--accent)" }}
           >
             In three dimensions
-          </div>
+          </div> */}
           <h2 className="m-0 mb-4 font-display text-[38px] font-normal leading-[1.02] md:text-[52px]">
             Turn it over in your hands.
           </h2>

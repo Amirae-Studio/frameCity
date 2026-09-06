@@ -1,6 +1,8 @@
 "use client";
 
+import { motion, useReducedMotion } from "framer-motion";
 import { marqueeNames } from "@/lib/data";
+import { Reveal } from "./Reveal";
 
 function Track() {
   return (
@@ -24,12 +26,22 @@ function Track() {
 }
 
 export function Marquee() {
+  const prefersReduced = useReducedMotion();
+
   return (
-    <section className="overflow-hidden border-b border-cream/[0.09] bg-marquee py-[22px]">
-      <div className="fc-marq">
-        <Track />
-        <Track />
-      </div>
-    </section>
+    <Reveal variant="none" margin="-20px">
+      <section className="overflow-hidden border-b border-cream/[0.09] bg-marquee py-[22px]">
+        <motion.div
+          className="fc-marq"
+          initial={{ opacity: 0 }}
+          whileInView={{ opacity: 1 }}
+          viewport={{ once: true }}
+          transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
+        >
+          <Track />
+          <Track />
+        </motion.div>
+      </section>
+    </Reveal>
   );
 }
