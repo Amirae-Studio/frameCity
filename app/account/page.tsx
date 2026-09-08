@@ -24,8 +24,14 @@ const TIER_LABELS: Record<string, { title: string; subtitle: string; bg: string;
     bg: "rgba(59, 130, 246, 0.15)",
     color: "#60a5fa",
   },
+  merchant: {
+    title: "Merchant",
+    subtitle: "Commercial license · Unlimited downloads",
+    bg: "rgba(245, 158, 11, 0.15)",
+    color: "#fbbf24",
+  },
   studio: {
-    title: "Studio",
+    title: "Merchant",
     subtitle: "Commercial license · Unlimited downloads",
     bg: "rgba(245, 158, 11, 0.15)",
     color: "#fbbf24",
@@ -49,7 +55,7 @@ export default async function AccountPage() {
     .single();
 
   const hasAccess = !!profile?.has_access;
-  let tierKey = profile?.tier as "explorer" | "architect" | "studio" | null;
+  let tierKey = profile?.tier as "explorer" | "architect" | "studio" | "merchant" | null;
 
   // Real-time lookup from access_codes table to guarantee tier sync
   if (hasAccess && profile?.redeemed_code) {
@@ -59,7 +65,7 @@ export default async function AccountPage() {
       .eq("code", profile.redeemed_code)
       .single();
     if (codeRow?.tier) {
-      tierKey = codeRow.tier as "explorer" | "architect" | "studio";
+      tierKey = codeRow.tier as "explorer" | "architect" | "studio" | "merchant";
     }
   }
 
@@ -139,7 +145,7 @@ export default async function AccountPage() {
                 {tierInfo.title} Tier
               </span>
             )}
-            {hasAccess && tierKey && tierKey !== "studio" && (
+            {hasAccess && tierKey && tierKey !== "studio" && tierKey !== "merchant" && (
               <UpgradeTierModal currentTier={tierInfo?.title || tierKey} />
             )}
           </div>
@@ -150,7 +156,7 @@ export default async function AccountPage() {
           <div className="flex items-center justify-between gap-4">
             <div>
               <div className="font-display text-[19px] font-medium">
-                Studio access
+                {tierKey === "merchant" || tierKey === "studio" ? "Merchant Access" : "Studio access"}
               </div>
               <p className="m-0 mt-1 text-[13.5px] leading-[1.6] text-cream/55">
                 {hasAccess && tierInfo
@@ -182,6 +188,79 @@ export default async function AccountPage() {
             </div>
           )}
         </div>
+
+        {/* Merchant Assets & Commercial License Downloads */}
+        {hasAccess && (tierKey === "merchant" || tierKey === "studio") && (
+          <div className="mt-6 rounded-[14px] border border-amber-500/30 bg-amber-500/[0.04] p-6">
+            <div className="flex items-center justify-between gap-4 mb-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[16px]">📜</span>
+                  <h2 className="m-0 font-display text-[19px] font-medium text-amber-300">
+                    Merchant Assets & License
+                  </h2>
+                </div>
+                <p className="m-0 mt-1 text-[13.5px] leading-[1.6] text-cream/60">
+                  As an official FrameCity Merchant, you are authorized to 3D print and sell physical models. Download your official assets below.
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3 border-t border-amber-500/20 pt-4">
+              {/* Download Merchant Badge */}
+              <a
+                href="/api/badge/download"
+                download="FrameCity_Merchant_Badge.svg"
+                className="group flex flex-col justify-between rounded-xl border border-cream/[0.12] bg-panel p-4 no-underline transition-all hover:border-amber-400/50 hover:bg-cream/[0.06] hover:scale-[1.01]"
+              >
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-amber-400">
+                      Official Badge
+                    </span>
+                    <span className="text-cream/40 group-hover:text-amber-400 transition-colors">↓</span>
+                  </div>
+                  <div className="font-display text-[15px] font-medium text-cream">
+                    Download Badge
+                  </div>
+                  <p className="m-0 mt-1 text-[12px] text-cream/50">
+                    Vector SVG badge for your shop, site, or social listings.
+                  </p>
+                </div>
+                <div className="mt-3 font-mono text-[11px] font-semibold text-amber-400 flex items-center gap-1">
+                  <span>Download SVG</span>
+                  <span>→</span>
+                </div>
+              </a>
+
+              {/* Download Commercial License PDF */}
+              <a
+                href="/api/license/download"
+                download="FrameCity_Commercial_License.pdf"
+                className="group flex flex-col justify-between rounded-xl border border-cream/[0.12] bg-panel p-4 no-underline transition-all hover:border-amber-400/50 hover:bg-cream/[0.06] hover:scale-[1.01]"
+              >
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-amber-400">
+                      PDF License
+                    </span>
+                    <span className="text-cream/40 group-hover:text-amber-400 transition-colors">↓</span>
+                  </div>
+                  <div className="font-display text-[15px] font-medium text-cream">
+                    Download Commercial License
+                  </div>
+                  <p className="m-0 mt-1 text-[12px] text-cream/50">
+                    Official PDF certificate validating your commercial selling rights.
+                  </p>
+                </div>
+                <div className="mt-3 font-mono text-[11px] font-semibold text-amber-400 flex items-center gap-1">
+                  <span>Download PDF</span>
+                  <span>→</span>
+                </div>
+              </a>
+            </div>
+          </div>
+        )}
 
         {/* Monthly Downloads Quota Section */}
         {hasAccess && stats && (

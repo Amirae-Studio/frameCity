@@ -97,7 +97,7 @@ export function Nav({ initialUser }: { initialUser: NavUser | null }) {
           ) : (
             <Button
               href="/login"
-              className="hidden text-[13px] text-cream/70 no-underline transition-colors hover:text-cream sm:inline"
+              className="hidden text-[13px]  no-underline transition-colors hover:text-cream sm:inline"
             >
               Sign in
             </Button>

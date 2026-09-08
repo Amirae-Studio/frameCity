@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 export type DownloadResult =
   | {
       ok: true;
-      tier: "explorer" | "architect" | "studio";
+      tier: "explorer" | "architect" | "studio" | "merchant";
       used?: number;
       limit?: number;
       remaining?: number;
@@ -24,9 +24,9 @@ export type DownloadResult =
 export type UserDownloadStats = {
   hasAccess: boolean;
   isTempAccess?: boolean;
-  tier: "explorer" | "architect" | "studio";
+  tier: "explorer" | "architect" | "studio" | "merchant";
   monthlyCount: number;
-  monthlyLimit: number | null; // 25 for explorer, null for architect/studio
+  monthlyLimit: number | null; // 25 for explorer, null for architect/studio/merchant
   remaining: number | null;
   resetDate: string; // formatted date of 1st of next month
   recentDownloads: Array<{
@@ -129,7 +129,7 @@ export async function recordDownload(
       return { ok: false, error: "You must unlock access with a valid code first." };
     }
 
-    const tier = profile.tier as "explorer" | "architect" | "studio";
+    const tier = profile.tier as "explorer" | "architect" | "studio" | "merchant";
 
     if (tier === "explorer") {
       const firstOfMonth = new Date();
@@ -188,7 +188,7 @@ export async function getUserDownloadStats(): Promise<UserDownloadStats | null> 
 
   if (!profile || !profile.has_access) return null;
 
-  let tier = profile.tier as "explorer" | "architect" | "studio" | null;
+  let tier = profile.tier as "explorer" | "architect" | "studio" | "merchant" | null;
   let isTempAccess = !!profile.is_temp_access;
 
   // Dynamically fetch live tier from access_codes table to guarantee real-time sync
@@ -199,7 +199,7 @@ export async function getUserDownloadStats(): Promise<UserDownloadStats | null> 
       .eq("code", profile.redeemed_code)
       .single();
     if (codeRow?.tier) {
-      tier = codeRow.tier as "explorer" | "architect" | "studio";
+      tier = codeRow.tier as "explorer" | "architect" | "studio" | "merchant";
     }
     if (codeRow && typeof codeRow.temp_access_code === "boolean") {
       isTempAccess = codeRow.temp_access_code;
