@@ -8,6 +8,8 @@ create table if not exists public.profiles (
   has_access boolean not null default false,
   redeemed_code text,
   redeemed_at timestamptz,
+  tier text,
+  makerworld_name text,
   created_at timestamptz not null default now()
 );
 
@@ -44,6 +46,7 @@ create trigger on_auth_user_created
 create table if not exists public.access_codes (
   code text primary key,
   is_active boolean not null default true,
+  tier text not null default 'explorer',
   max_uses integer not null default 1,
   uses integer not null default 0,
   note text,
@@ -55,7 +58,10 @@ create table if not exists public.access_codes (
 alter table public.access_codes enable row level security;
 
 -- ============================================================ redeem (atomic)
-create or replace function public.redeem_access_code(p_code text)
+create or replace function public.redeem_access_code(
+  p_code text,
+  p_makerworld_name text default null
+)
 returns jsonb
 language plpgsql
 security definer
@@ -66,14 +72,10 @@ declare
   v_email text;
   v_code text := upper(trim(p_code));
   v_row public.access_codes%rowtype;
+  v_tier text;
 begin
   if v_user is null then
     return jsonb_build_object('ok', false, 'error', 'not_authenticated');
-  end if;
-
-  -- Already unlocked? Idempotent success.
-  if exists (select 1 from public.profiles where id = v_user and has_access) then
-    return jsonb_build_object('ok', true, 'already', true);
   end if;
 
   -- Lock the code row so two users can't redeem the same code at once.
@@ -90,21 +92,27 @@ begin
   set uses = uses + 1
   where code = v_row.code;
 
+  -- Read tier from the code row (fallback to 'explorer' if null).
+  v_tier := coalesce(v_row.tier, 'explorer');
+
   -- Upsert in case the signup trigger predates this schema.
   select email into v_email from auth.users where id = v_user;
-  insert into public.profiles (id, email, has_access, redeemed_code, redeemed_at)
-  values (v_user, v_email, true, v_row.code, now())
+  insert into public.profiles (id, email, has_access, redeemed_code, redeemed_at, tier, makerworld_name)
+  values (v_user, v_email, true, v_row.code, now(), v_tier, p_makerworld_name)
   on conflict (id) do update
     set has_access = true,
         redeemed_code = excluded.redeemed_code,
-        redeemed_at = excluded.redeemed_at;
+        redeemed_at = excluded.redeemed_at,
+        tier = excluded.tier,
+        makerworld_name = coalesce(excluded.makerworld_name, public.profiles.makerworld_name);
 
-  return jsonb_build_object('ok', true);
+  return jsonb_build_object('ok', true, 'tier', v_tier);
 end;
 $$;
 
-revoke execute on function public.redeem_access_code(text) from public, anon;
-grant execute on function public.redeem_access_code(text) to authenticated;
+revoke execute on function public.redeem_access_code(text, text) from public, anon;
+grant execute on function public.redeem_access_code(text, text) to authenticated;
+
 
 -- ============================================================ seed examples
 -- Store codes UPPERCASE (redemption uppercases input). Examples:

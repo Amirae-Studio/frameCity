@@ -185,3 +185,64 @@ export async function fetchStudioBuildings(): Promise<StudioBuilding[]> {
   ];
 }
 
+/**
+ * Verify if a MakerWorld username exists at https://makerworld.com/en/@user_name
+ * using MakerWorld's search API endpoint.
+ */
+export async function verifyMakerWorldUsername(
+  username: string
+): Promise<{ ok: boolean; cleanName?: string; error?: string }> {
+  const cleanName = username.trim().replace(/^@/, "");
+
+  if (!cleanName) {
+    return { ok: false, error: "Please enter your MakerWorld username." };
+  }
+
+  // Basic username pattern: letters, numbers, hyphens, underscores, spaces
+  if (!/^[a-zA-Z0-9_\s-]{2,50}$/.test(cleanName)) {
+    return {
+      ok: false,
+      error: "Username can only contain letters, numbers, hyphens, and underscores.",
+    };
+  }
+
+  try {
+    const searchUrl = `https://makerworld.com/api/v1/search-service/search/user?keyword=${encodeURIComponent(cleanName)}`;
+    const response = await fetch(searchUrl, {
+      method: "GET",
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Referer": "https://makerworld.com/en",
+        "Accept": "application/json, text/plain, */*",
+      },
+      cache: "no-store",
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      if (data.hits && data.hits.length > 0) {
+        const lowerClean = cleanName.toLowerCase().replace(/\s+/g, "");
+        const matched = data.hits.find(
+          (h: { handle?: string; name?: string; uid?: number }) =>
+            (h.handle && h.handle.toLowerCase().replace(/\s+/g, "") === lowerClean) ||
+            (h.name && h.name.toLowerCase().replace(/\s+/g, "") === lowerClean) ||
+            String(h.uid) === cleanName
+        );
+
+        if (matched) {
+          return { ok: true, cleanName: matched.handle || cleanName };
+        }
+      }
+      return {
+        ok: false,
+        error: `MakerWorld user "@${cleanName}" was not found.`,
+      };
+    }
+
+    return { ok: false, error: "Could not connect to MakerWorld verification service." };
+  } catch (err) {
+    console.error("MakerWorld verification error:", err);
+    return { ok: false, error: "Error checking MakerWorld username." };
+  }
+}

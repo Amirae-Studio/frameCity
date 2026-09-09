@@ -25,8 +25,9 @@ export function UpgradeTierModal({ currentTier }: { currentTier: string }) {
     });
 
     if (error) {
+      console.error("Upgrade tier RPC error:", error);
       setStatus("error");
-      setMessage("Something went wrong — please try again.");
+      setMessage(error.message || "Something went wrong — please try again.");
       return;
     }
 

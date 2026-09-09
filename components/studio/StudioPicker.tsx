@@ -24,11 +24,12 @@ export function StudioPicker({
   const [cities, setCities] = useState<StudioCity[]>(initialCities || []);
   const [buildings, setBuildings] = useState<StudioBuilding[]>(initialBuildings || []);
 
-  const [category, setCategory] = useState<CategoryType | null>(null);
+  const [category, setCategory] = useState<CategoryType | null>("cities");
   const [selectedCountry, setSelectedCountry] = useState<string | null>(null);
   const [citySlug, setCitySlug] = useState<string | null>(null);
-const CITY_STEPS = ["Category", "Country", "City", "District"];
-const BUILDING_STEPS = ["Category", "Country", "Building"];
+  const CITY_STEPS = ["Country", "City", "District"];
+  const BUILDING_STEPS = ["Country", "Building"];
+
   useEffect(() => {
     if (!initialCities || initialCities.length === 0) {
       fetchStudioCities().then((res) => setCities(res));
@@ -95,16 +96,16 @@ const BUILDING_STEPS = ["Category", "Country", "Building"];
     if (!citySlug) return null;
     return cities.find((c) => c.slug === citySlug) ?? null;
   }, [cities, citySlug]);
-const currentStepNum = useMemo(() => {
-  if (!category) return 1;
-  if (!selectedCountry) return 2;
-  if (category === "buildings") return 3;
-  // cities flow
-  if (!city) return 3;
-  return 4;
-}, [category, selectedCountry, city]);
 
-const stepLabels = category === "buildings" ? BUILDING_STEPS : CITY_STEPS;
+  const currentStepNum = useMemo(() => {
+    if (!selectedCountry) return 1;
+    if (category === "buildings") return 2;
+    if (!city) return 2;
+    return 3;
+  }, [category, selectedCountry, city]);
+
+  const stepLabels = category === "buildings" ? BUILDING_STEPS : CITY_STEPS;
+
   return (
     <div className="relative mx-auto w-full max-w-[1000px] px-6 py-14 md:py-20">
       {/* ambient animated glow */}
@@ -117,89 +118,8 @@ const stepLabels = category === "buildings" ? BUILDING_STEPS : CITY_STEPS;
       />
 
       <AnimatePresence mode="wait">
-        {/* ---------------------------------- STEP 01: CATEGORY SELECTION */}
-        {!category ? (
-          <motion.div
-            key="step-category"
-            initial={{ opacity: 0, y: 18 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -14 }}
-            transition={{ duration: 0.4, ease }}
-          >
-            {/* <div
-              className="mb-[18px] font-mono text-[11px] font-bold uppercase tracking-[0.3em]"
-              style={{ color: "var(--accent)" }}
-            >
-              The Studio · Step 01
-            </div> */}
-<StepTimeline steps={stepLabels} currentStep={currentStepNum} />
-            <ShinyText
-              text="What would you like to explore?"
-              className="m-0 mb-3 font-display text-[40px] font-normal leading-[1.03] md:text-[52px]"
-            />
-
-            <p className="m-0 mb-11 max-w-[500px] text-[15px] leading-[1.7] text-cream/[0.62]">
-              Choose between full 3D printable city tiles or individual landmark buildings.
-            </p>
-
-            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-              {/* Option 1: City Models */}
-              <SpotlightCard
-                className="p-8"
-                onClick={() => {
-                  setCategory("cities");
-                  setSelectedCountry(null);
-                  setCitySlug(null);
-                }}
-              >
-                {/* <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-cream/15 bg-cream/[0.04] px-3 py-1 font-mono text-[10px] font-semibold uppercase tracking-[0.2em] text-cream/70">
-                  <span>🌆</span> 3D Map Tiles
-                </div> */}
-                <h2 className="mb-2 font-display text-[30px] font-medium text-cream group-hover:text-[color:var(--accent)] transition-colors">
-                  City Models
-                </h2>
-                <p className="mb-6 text-[14px] leading-[1.6] text-cream/60">
-                  Browse 3D printable urban tiles, districts, and complete city blocks modeled to scale.
-                </p>
-                <div
-                  className="font-mono text-[11px] font-bold uppercase tracking-[0.18em] flex items-center justify-between"
-                  style={{ color: "var(--accent)" }}
-                >
-                  <span>Explore Cities</span>
-                  <span className="transition-transform duration-300 group-hover:translate-x-1">→</span>
-                </div>
-              </SpotlightCard>
-
-              {/* Option 2: Standalone Buildings */}
-              <SpotlightCard
-                className="p-8"
-                onClick={() => {
-                  setCategory("buildings");
-                  setSelectedCountry(null);
-                  setCitySlug(null);
-                }}
-              >
-                {/* <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-cream/15 bg-cream/[0.04] px-3 py-1 font-mono text-[10px] font-semibold uppercase tracking-[0.2em] text-cream/70">
-                  <span>🏛️</span> Landmark Buildings
-                </div> */}
-                <h2 className="mb-2 font-display text-[30px] font-medium text-cream group-hover:text-[color:var(--accent)] transition-colors">
-                  Buildings
-                </h2>
-                <p className="mb-6 text-[14px] leading-[1.6] text-cream/60">
-                  Browse individual 3D printable landmark skyscrapers, towers, and iconic architecture.
-                </p>
-                <div
-                  className="font-mono text-[11px] font-bold uppercase tracking-[0.18em] flex items-center justify-between"
-                  style={{ color: "var(--accent)" }}
-                >
-                  <span>Explore Buildings</span>
-                  <span className="transition-transform duration-300 group-hover:translate-x-1">→</span>
-                </div>
-              </SpotlightCard>
-            </div>
-          </motion.div>
-        ) : !selectedCountry ? (
-          /* ---------------------------------- STEP 02: COUNTRY SELECTION */
+        {!selectedCountry ? (
+          /* ---------------------------------- STEP 01: COUNTRY SELECTION */
           <motion.div
             key="step-countries"
             initial={{ opacity: 0, y: 18 }}
@@ -207,12 +127,7 @@ const stepLabels = category === "buildings" ? BUILDING_STEPS : CITY_STEPS;
             exit={{ opacity: 0, y: -14 }}
             transition={{ duration: 0.4, ease }}
           >
-            <button
-              onClick={() => setCategory(null)}
-              className="mb-7 flex items-center gap-2 font-mono text-[10.5px] uppercase tracking-[0.2em] text-cream/50 transition-colors hover:text-cream cursor-pointer"
-            >
-              <span aria-hidden>←</span> Back to options
-            </button>
+
 
             {/* <div
               className="mb-[18px] font-mono text-[11px] font-bold uppercase tracking-[0.3em]"
