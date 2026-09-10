@@ -53,7 +53,7 @@ export function Nav({ initialUser }: { initialUser: NavUser | null }) {
         </a>
 
         {/* Desktop Navigation Links */}
-        <nav className="hidden gap-9 text-[13.5px] text-cream/70 md:flex">
+        <nav className="hidden gap-9 text-[13.5px] text-cream/90 md:flex">
           {links.map((l) => (
             <a
               key={l.href}

@@ -364,7 +364,7 @@ function CityAssembly({
     const totalH = terrainInfo ? terrainInfo.max[upAxis] - terrainInfo.min[upAxis] : 0;
     const baseHeight = totalH * 0.4;
     const currentTerrainBottom = terrainBottomAtRest - (sTerrain - 1) * baseHeight;
-    const REVIT_OVERLAP = 0.035;
+    const REVIT_OVERLAP = 0.015;
     const h = baseDimensions.height * (controls.revitHeight / 100);
     const revitBottom = currentTerrainBottom + REVIT_OVERLAP - h;
     const lowestPoint = controls.enableRevit
@@ -493,7 +493,7 @@ function CityAssembly({
 
         object.updateMatrixWorld(true);
 
-        const REVIT_OVERLAP = 0.035;
+        const REVIT_OVERLAP = 0.015;
         const rx = center[horizAxes[0]];
         const ry = currentTerrainBottom + REVIT_OVERLAP - h / 2;
         const rz = center[horizAxes[1]];

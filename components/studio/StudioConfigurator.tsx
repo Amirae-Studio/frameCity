@@ -74,6 +74,7 @@ export function StudioConfigurator({
   const [downloadNotice, setDownloadNotice] = useState<string | null>(null);
   const [downloadLimitModal, setDownloadLimitModal] = useState(false);
   const [tempAccessModalOpen, setTempAccessModalOpen] = useState(false);
+  const [revitInfoModal, setRevitInfoModal] = useState(false);
 
   // Active dashboard tab state
   type StudioTab = "printer" | "transform" | "city" | "revit" | "colors";
@@ -321,6 +322,104 @@ export function StudioConfigurator({
         onClose={() => setTempAccessModalOpen(false)}
       />
 
+      {/* Revit Info Modal */}
+      <AnimatePresence>
+        {revitInfoModal && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm"
+            style={{ background: "rgba(0,0,0,0.75)" }}
+            onClick={(e) => { if (e.target === e.currentTarget) setRevitInfoModal(false); }}
+          >
+            <motion.div
+              initial={{ scale: 0.92, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.92, opacity: 0, y: 20 }}
+              transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+              className="w-full max-w-[600px] max-h-[88vh] overflow-y-auto rounded-2xl border border-cream/[0.16] shadow-[0_32px_80px_rgba(0,0,0,0.6)]"
+              style={{ background: "#0e1412" }}
+            >
+              {/* Modal Header */}
+              <div className="sticky top-0 z-10 flex items-center justify-between border-b border-cream/[0.09] px-6 py-4" style={{ background: "#0e1412" }}>
+                <div className="flex items-center gap-3">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-xl" style={{ background: "var(--accent)" }}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                      <rect x="2" y="14" width="20" height="6" rx="1.5" stroke="white" strokeWidth="1.8"/>
+                      <rect x="5" y="4" width="14" height="10" rx="1" stroke="white" strokeWidth="1.8"/>
+                    </svg>
+                  </div>
+                  <div>
+                    <div className="font-mono text-[9px] font-bold uppercase tracking-[0.3em]" style={{ color: "var(--accent)" }}>Learn More</div>
+                    <h2 className="m-0 font-display text-[20px] font-medium text-[#fff]">What is the Revit Base Frame?</h2>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setRevitInfoModal(false)}
+                  className="flex h-8 w-8 items-center justify-center rounded-xl text-[#fff]/40 transition-colors hover:bg-cream/10 hover:text-[#fff]/40 text-[16px]"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Modal Body */}
+              <div className="flex flex-col gap-6 p-6">
+
+                {/* Hero Image 1 */}
+                <div className="overflow-hidden rounded-xl border border-cream/[0.12]">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src="/revit.jpg"
+                    alt="Revit base frame explainer — city model sitting on a rigid base plate"
+                    className="w-full object-cover"
+                    style={{ maxHeight: "260px" }}
+                  />
+                </div>
+
+                {/* Section 1 */}
+                <div className="flex flex-col gap-2">
+                  <div className="font-mono text-[10px] font-bold uppercase tracking-[0.24em]" style={{ color: "var(--accent)" }}>What it is</div>
+                  <p className="m-0 text-[13.5px] leading-[1.7] text-[#ffff]">
+                    A flat, rigid rectangular plate generated directly beneath your city model. It serves as a structural mounting board and provides a seamless contact layer, making it much easier to securely anchor and attach your exported Revit geometry to the base.
+                  </p>
+                </div>
+
+                
+
+                
+
+                {/* Section 2 — How to use */}
+                <div className="flex flex-col gap-3 rounded-xl border border-cream/[0.12] bg-cream/[0.03] p-4">
+                  <div className="font-mono text-[10px] font-bold uppercase tracking-[0.24em]" style={{ color: "var(--accent)" }}>How to use it</div>
+                  <ol className="m-0 flex flex-col gap-2 pl-0 list-none">
+                    {[
+                      { step: "01", text: "Toggle on \"Revit base frame layer\" in the controls above." },
+                      { step: "02", text: "Adjust the Frame Height to how thick you want the base (in mm)." },
+                      { step: "03", text: "Use Uniform W+D to lock width and depth, or control them independently." },
+                      { step: "04", text: "Download your model — the base frame is merged automatically." },
+                    ].map((s) => (
+                      <li key={s.step} className="flex items-start gap-3">
+                        <span className="mt-[1px] shrink-0 font-mono text-[10px] font-bold" style={{ color: "var(--accent)" }}>{s.step}</span>
+                        <span className="text-[12.5px] leading-[1.6] text-[#ffff]">{s.text}</span>
+                      </li>
+                    ))}
+                  </ol>
+                </div>
+
+                {/* Close Button */}
+                <button
+                  type="button"
+                  onClick={() => setRevitInfoModal(false)}
+                  className="w-full rounded-full py-3 text-[13px] font-medium text-[var(--color-base)] transition-transform hover:scale-[1.02]"
+                  style={{ background: "var(--accent)" }}
+                >
+                  Got it — back to settings
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       {/* Header */}
       <header className="sticky top-0 z-30 flex h-16 items-center justify-between gap-3 border-b border-cream/[0.09] bg-deep/70 px-4 backdrop-blur-xl md:px-6">
         <div className="flex min-w-0 items-center gap-4">
@@ -428,11 +527,12 @@ export function StudioConfigurator({
           <div className="pointer-events-auto flex lg:flex-col items-center gap-2 rounded-2xl border border-cream/[0.14] bg-panel/95 p-2 shadow-[0_20px_60px_rgba(0,0,0,0.4)] backdrop-blur-xl shrink-0 h-fit max-w-full overflow-x-auto lg:overflow-x-visible">
             {[
               { id: "city" as const, label: "Manipulate City", icon: <Building2  size={18} /> },
-              { id: "printer" as const, label: "Printer Setup", icon: <PrinterIcon size={18} />},
-              { id: "transform" as const, label: "Transform", icon: <Box size={18} /> },
+              
               
               { id: "revit" as const, label: "Revit Base Frame", icon: <SquareDimensions  size={18} /> },
               ...(type !== "building" ? [{ id: "colors" as const, label: "Filament Colors", icon: <Palette  size={18} /> }] : []),
+              { id: "printer" as const, label: "Printer Setup", icon: <PrinterIcon size={18} />},
+              { id: "transform" as const, label: "Transform", icon: <Box size={18} /> },
             ].map((item) => {
               const active = activeTab === item.id;
               return (
@@ -489,11 +589,11 @@ export function StudioConfigurator({
                 <div className="mb-4 flex items-center justify-between border-b border-cream/[0.09] pb-3">
                   <div className="flex items-center gap-2">
                     <span className="font-mono text-[10px] font-bold text-[var(--accent)] uppercase tracking-wider">
-                      {activeTab === "printer" && "02"}
-                      {activeTab === "transform" && "03"}
+                      {activeTab === "printer" && "04"}
+                      {activeTab === "transform" && "05"}
                       {activeTab === "city" && "01"}
-                      {activeTab === "revit" && "04"}
-                      {activeTab === "colors" && "05"}
+                      {activeTab === "revit" && "02"}
+                      {activeTab === "colors" && "03"}
                     </span>
                     <h3 className="m-0 font-display text-[17px] font-medium capitalize text-cream">
                       {activeTab === "printer" && "Printer Setup"}
@@ -632,7 +732,7 @@ export function StudioConfigurator({
                             label="Terrain height"
                             value={cityCtl.terrain}
                             min={20}
-                            max={200}
+                            max={500}
                             step={1}
                             decimals={0}
                             onValueChange={(v) => setCtl("terrain", v)}
@@ -722,6 +822,31 @@ export function StudioConfigurator({
                 {/* Tab 4: Revit Base Frame */}
                 {activeTab === "revit" && (
                   <div className="flex flex-col gap-4">
+                    {/* What is Revit? Info Banner */}
+                    <div className="rounded-xl border border-cream/[0.14] bg-cream/[0.03] p-3.5 flex flex-col gap-2">
+                      <div className="flex items-start gap-2.5">
+                        <div className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md" style={{ background: "var(--accent)", opacity: 0.9 }}>
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
+                            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z" fill="white"/>
+                          </svg>
+                        </div>
+                        <div className="flex flex-col gap-1">
+                          <span className="font-mono text-[10px] font-bold uppercase tracking-wider text-cream/80">What is the Revit Frame?</span>
+                          <p className="m-0 font-mono text-[9.5px] leading-[1.65] text-cream/50">
+                            A rigid base plate printed beneath your city model — makes it wall-mountable like a picture frame.
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setRevitInfoModal(true)}
+                        className="mt-1 w-full rounded-lg border border-[var(--accent)]/40 py-2 font-mono text-[10px] font-bold uppercase tracking-wider text-[var(--accent)] transition-all duration-200 hover:bg-[var(--accent)]/10 flex items-center justify-center gap-1.5"
+                      >
+                        
+                        Click here to know more about Revit
+                      </button>
+                    </div>
+
                     <SegmentedToggle
                       label="Revit base frame layer"
                       checked={cityCtl.enableRevit}
@@ -732,8 +857,8 @@ export function StudioConfigurator({
                         <Scrubber
                           label={`Frame height (${(cityCtl.revitHeight / 100).toFixed(1)} cm)`}
                           value={cityCtl.revitHeight}
-                          min={20}
-                          max={300}
+                          min={10}
+                          max={200}
                           step={1}
                           decimals={0}
                           onValueChange={(v) => setCtl("revitHeight", v)}
@@ -749,8 +874,8 @@ export function StudioConfigurator({
                           <Scrubber
                             label="Frame size (W+D)"
                             value={cityCtl.revitUniform}
-                            min={50}
-                            max={200}
+                            min={95}
+                            max={105}
                             step={1}
                             decimals={0}
                             onValueChange={(v) => setCtl("revitUniform", v)}
@@ -760,8 +885,8 @@ export function StudioConfigurator({
                             <Scrubber
                               label="Frame width"
                               value={cityCtl.revitWidth}
-                              min={50}
-                              max={200}
+                              min={95}
+                              max={105}
                               step={1}
                               decimals={0}
                               onValueChange={(v) => setCtl("revitWidth", v)}
@@ -769,8 +894,8 @@ export function StudioConfigurator({
                             <Scrubber
                               label="Frame breadth"
                               value={cityCtl.revitBreadth}
-                              min={50}
-                              max={200}
+                              min={95}
+                              max={105}
                               step={1}
                               decimals={0}
                               onValueChange={(v) => setCtl("revitBreadth", v)}
