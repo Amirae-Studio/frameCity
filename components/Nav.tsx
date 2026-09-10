@@ -12,6 +12,7 @@ import { Button } from "./ui/Button";
 export function Nav({ initialUser }: { initialUser: NavUser | null }) {
   const [user, setUser] = useState<NavUser | null>(initialUser);
   const [isOpen, setIsOpen] = useState(false);
+  const [hoveredLink, setHoveredLink] = useState<string | null>(null);
   const pathname = usePathname();
   const isHome = pathname === "/";
 
@@ -40,39 +41,67 @@ export function Nav({ initialUser }: { initialUser: NavUser | null }) {
     return () => subscription.unsubscribe();
   }, []);
 
+  // Framer Motion variants for mobile menu
+  const menuVariants = {
+    hidden: { opacity: 0, height: 0 },
+    visible: {
+      opacity: 1,
+      height: "auto",
+      transition: { duration: 0.4, ease: [0.22, 1, 0.36, 1], staggerChildren: 0.04 },
+    },
+    exit: { opacity: 0, height: 0, transition: { duration: 0.3, ease: "easeInOut" } },
+  };
+
+  const itemVariants = {
+    hidden: { opacity: 0, x: -10 },
+    visible: { opacity: 1, x: 0, transition: { duration: 0.4, ease: "easeOut" } },
+  };
+
   return (
-    <>
-      <motion.header
-        initial={{ y: -80, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
-        className="sticky top-0 z-50 flex items-center justify-between border-b border-cream/[0.09] bg-base/70 px-6 py-[18px] backdrop-blur-xl md:px-[52px] md:py-[22px]"
-      >
-        <a href="/" aria-label="FrameCity Home" className="no-underline flex items-center">
-          <Logo className="theme-logo h-8 md:h-9" priority />
+    <motion.header
+      initial={{ y: -80, opacity: 0 }}
+      animate={{ y: 0, opacity: 1 }}
+      transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
+      className="sticky top-0 z-50 w-full  bg-base/50 backdrop-blur-2xl shadow-[0_4px_24px_rgba(0,0,0,0.05)]"
+    >
+      <div className="flex w-full items-center justify-between px-6 py-4 md:px-12 md:py-5">
+        <a href="/" aria-label="FrameCity Home" className="flex items-center z-10 no-underline">
+          <Logo className="theme-logo h-8 md:h-10 transition-all duration-300 hover:scale-105 hover:drop-shadow-[0_0_12px_rgba(255,255,255,0.3)]" priority />
         </a>
 
-        {/* Desktop Navigation Links */}
-        <nav className="hidden gap-9 text-[13.5px] text-cream/90 md:flex">
+        {/* Desktop Navigation Links with Volumetric Hover Pill */}
+        <nav className="hidden absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 md:flex items-center gap-1.5">
           {links.map((l) => (
             <a
               key={l.href}
               href={l.href}
-              className="relative no-underline transition-colors duration-300 hover:text-cream"
+              onMouseEnter={() => setHoveredLink(l.href)}
+              onMouseLeave={() => setHoveredLink(null)}
+              className="relative px-4 py-2 text-[13.5px] font-medium text-cream/90 no-underline transition-all duration-300 hover:text-cream hover:drop-shadow-md"
             >
-              {l.label}
+              {hoveredLink === l.href && (
+                <motion.div
+                  layoutId="nav-hover-pill"
+                  className="absolute inset-0 -z-10 rounded-full bg-gradient-to-b from-white/15 to-white/5 shadow-[inset_0_1px_0_rgba(255,255,255,0.2)] border border-white/10"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ type: "spring", stiffness: 400, damping: 30 }}
+                />
+              )}
+              <span className="relative z-10">{l.label}</span>
             </a>
           ))}
         </nav>
 
-        {/* Desktop & Mobile Right Actions */}
-        <div className="flex items-center gap-3 md:gap-4">
+        {/* Right Actions */}
+        <div className="flex items-center gap-3 md:gap-4 z-10">
           {user ? (
             <Button
               href="/account"
               variant="none"
               title={`Signed in as ${user.email}`}
-              className="group flex items-center gap-2 rounded-full border border-cream/[0.16] py-[5px] pl-[5px] pr-3 no-underline transition-colors duration-300 hover:border-cream/40"
+              className="group flex items-center gap-2 rounded-full border border-white/10 py-1 pl-1 pr-3 no-underline transition-all duration-300 hover:border-white/30 hover:bg-white/5 hover:shadow-[0_0_12px_rgba(255,255,255,0.05)]"
             >
               {user.avatarUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
@@ -80,97 +109,103 @@ export function Nav({ initialUser }: { initialUser: NavUser | null }) {
                   src={user.avatarUrl}
                   alt=""
                   referrerPolicy="no-referrer"
-                  className="h-6 w-6 rounded-full object-cover"
+                  className="h-6 w-6 rounded-full object-cover shadow-inner"
                 />
               ) : (
                 <span
-                  className="flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-semibold text-[var(--color-base)]"
+                  className="flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-bold text-[var(--color-base)] shadow-[inset_0_1px_0_rgba(255,255,255,0.4)]"
                   style={{ background: "var(--accent)" }}
                 >
                   {user.initial}
                 </span>
               )}
-              <span className="max-w-[90px] truncate text-[12.5px] text-cream/75 transition-colors group-hover:text-cream hidden sm:inline">
+              <span className="max-w-[80px] truncate text-[12.5px] font-medium text-cream/90 transition-colors group-hover:text-cream hidden sm:inline">
                 {user.name}
               </span>
             </Button>
           ) : (
             <Button
               href="/login"
-              className="hidden text-[13px]  no-underline transition-colors hover:text-cream sm:inline"
+              className="hidden text-[13px] font-medium text-cream/90 no-underline transition-colors hover:text-cream hover:drop-shadow-md sm:inline px-2"
             >
               Sign in
             </Button>
           )}
+
+          <div className="hidden sm:block h-4 w-[1px] bg-gradient-to-b from-transparent via-white/20 to-transparent mx-1" />
 
           <ThemeToggle />
 
           <Button
             href="/studio"
             variant="none"
-            className="group hidden sm:inline-flex items-center gap-2 rounded-full bg-cream px-5 py-[11px] text-[13px] text-[var(--color-base)] no-underline transition-transform duration-300 hover:scale-[1.03]"
+            className="group hidden sm:inline-flex items-center gap-2 rounded-full bg-white px-5 py-[9px] text-[13px] font-bold text-black no-underline transition-all duration-300 hover:scale-105 hover:shadow-[0_0_24px_rgba(255,255,255,0.4)] active:scale-95"
           >
-            {user ? "Studio" : "Studio"}
-            <span className="inline-block h-[5px] w-[5px] rotate-45 border-r-[1.5px] border-t-[1.5px] border-[var(--color-base)] transition-transform duration-300 group-hover:translate-x-0.5" />
+            Studio
+            <span className="inline-block h-[5px] w-[5px] rotate-45 border-r-[1.5px] border-t-[1.5px] border-black transition-transform duration-300 group-hover:translate-x-[2px] group-hover:-translate-y-[2px]" />
           </Button>
 
           {/* Mobile Hamburger Button */}
           <button
             onClick={() => setIsOpen(!isOpen)}
             aria-label="Toggle menu"
-            className="flex h-9 w-9 items-center justify-center rounded-full border border-cream/[0.16] text-cream md:hidden"
+            className="flex h-9 w-9 items-center justify-center rounded-full border border-white/10 text-cream transition-all duration-300 hover:bg-white/10 hover:text-cream md:hidden"
           >
-            <div className="relative h-3.5 w-4 flex flex-col justify-between">
+            <div className="relative h-[12px] w-3.5 flex flex-col justify-between">
               <span
-                className={`h-[1.5px] w-full bg-current transition-transform duration-300 ${
-                  isOpen ? "translate-y-[6px] rotate-45" : ""
+                className={`h-[1.5px] w-full bg-current rounded-full transition-transform duration-300 origin-center ${
+                  isOpen ? "translate-y-[5px] rotate-45 bg-white" : ""
                 }`}
               />
               <span
-                className={`h-[1.5px] w-full bg-current transition-opacity duration-300 ${
+                className={`h-[1.5px] w-full bg-current rounded-full transition-opacity duration-300 ${
                   isOpen ? "opacity-0" : "opacity-100"
                 }`}
               />
               <span
-                className={`h-[1.5px] w-full bg-current transition-transform duration-300 ${
-                  isOpen ? "-translate-y-[6px] -rotate-45" : ""
+                className={`h-[1.5px] w-full bg-current rounded-full transition-transform duration-300 origin-center ${
+                  isOpen ? "-translate-y-[5.25px] -rotate-45 bg-white" : ""
                 }`}
               />
             </div>
           </button>
         </div>
-      </motion.header>
+      </div>
 
-      {/* Mobile Navigation Drawer */}
+      {/* Mobile Navigation - Alive Edge to Edge Dropdown */}
       <AnimatePresence>
         {isOpen && (
           <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: "auto" }}
-            exit={{ opacity: 0, height: 0 }}
-            transition={{ duration: 0.3, ease: "easeInOut" }}
-            className="sticky top-[69px] z-40 overflow-hidden border-b border-cream/[0.09] bg-base/95 backdrop-blur-2xl md:hidden"
+            variants={menuVariants}
+            initial="hidden"
+            animate="visible"
+            exit="exit"
+            className="absolute left-0 right-0 top-full overflow-hidden border-b border-white/[0.05] bg-base/95 backdrop-blur-3xl md:hidden shadow-2xl"
           >
-            <div className="flex flex-col gap-5 px-6 py-8">
+            <div className="flex flex-col gap-2 px-6 py-6">
               {links.map((l) => (
-                <a
+                <motion.a
+                  variants={itemVariants}
                   key={l.href}
                   href={l.href}
                   onClick={() => setIsOpen(false)}
-                  className="text-lg font-medium text-cream/80 no-underline transition-colors hover:text-cream"
+                  className="rounded-xl py-3 text-[16px] font-medium text-cream/90 no-underline transition-all duration-300 hover:translate-x-1 hover:text-cream"
                 >
                   {l.label}
-                </a>
+                </motion.a>
               ))}
 
-              <hr className="my-2 border-cream/[0.09]" />
+              <motion.div 
+                variants={itemVariants} 
+                className="my-4 h-[1px] w-full bg-gradient-to-r from-transparent via-white/10 to-transparent" 
+              />
 
-              <div className="flex flex-col gap-4">
+              <motion.div variants={itemVariants} className="flex flex-col gap-4 pb-2">
                 {!user && (
                   <a
                     href="/login"
                     onClick={() => setIsOpen(false)}
-                    className="text-base text-cream/80 no-underline hover:text-cream"
+                    className="py-2 text-[16px] font-medium text-cream/90 no-underline transition-all hover:translate-x-1 hover:text-cream"
                   >
                     Sign in
                   </a>
@@ -179,16 +214,16 @@ export function Nav({ initialUser }: { initialUser: NavUser | null }) {
                 <Button
                   href="/studio"
                   onClick={() => setIsOpen(false)}
-                  className="group inline-flex items-center justify-center gap-2 rounded-full bg-cream px-6 py-3 text-sm font-medium text-[var(--color-base)] no-underline"
+                  className="group flex w-full items-center justify-center gap-2 rounded-xl bg-white py-3.5 text-[15px] font-bold text-black no-underline active:scale-[0.98] transition-all hover:shadow-[0_0_24px_rgba(255,255,255,0.3)]"
                 >
-                  {user ? "Studio" :"Studio"}
-                  <span className="inline-block h-[5px] w-[5px] rotate-45 border-r-[1.5px] border-t-[1.5px] border-[var(--color-base)]" />
+                  Studio
+                  <span className="inline-block h-[5px] w-[5px] rotate-45 border-r-[1.5px] border-t-[1.5px] border-black transition-transform duration-300 group-hover:translate-x-[2px] group-hover:-translate-y-[2px]" />
                 </Button>
-              </div>
+              </motion.div>
             </div>
           </motion.div>
         )}
       </AnimatePresence>
-    </>
+    </motion.header>
   );
 }

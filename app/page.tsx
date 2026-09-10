@@ -2,7 +2,7 @@ import { Nav } from "@/components/Nav";
 import { Hero } from "@/components/Hero";
 import { Marquee } from "@/components/Marquee";
 import { Film } from "@/components/Film";
-import { Craft, ImageSlideshow } from "@/components/Craft";
+import { Craft } from "@/components/Craft";
 import { ModelShowcase } from "@/components/ModelShowcase";
 import { Milestones } from "@/components/Milestones";
 import { Configurator } from "@/components/Configurator";
@@ -11,6 +11,8 @@ import { FAQ } from "@/components/FAQ";
 import { Footer } from "@/components/Footer";
 import { createClient } from "@/lib/supabase/server";
 import { toNavUser } from "@/lib/user";
+import GlobeView from "@/components/GlobeView";
+import { ImageSlideshow } from "@/components/ImageSildeShow";
 
 export default async function Home() {
   const supabase = await createClient();
@@ -25,7 +27,7 @@ export default async function Home() {
         <Hero />
         <Marquee />
         <Film />
-        {/* <Collection /> */}
+        <GlobeView />
         <Craft />
         <ImageSlideshow />
         <ModelShowcase />

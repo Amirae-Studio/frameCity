@@ -59,7 +59,7 @@ export const filmStages = [
 export type Accent = { value: string; rgb: string; label: string };
 
 export const accents: Accent[] = [
-  { value: "#c79366", rgb: "199, 147, 102", label: "Bronze" },
+  { value: "#e5b229", rgb: "229, 178, 41", label: "Gold" },
   { value: "#8a94a6", rgb: "138, 148, 166", label: "Slate" },
   { value: "#9c8f7a", rgb: "156, 143, 122", label: "Sand" },
   { value: "#b06a4a", rgb: "176, 106, 74", label: "Terracotta" },

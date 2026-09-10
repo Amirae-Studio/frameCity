@@ -1,3 +1,4 @@
+@import url('https://fonts.googleapis.com/css2?family=UnifrakturCook:wght@700&family=Pirata+One&display=swap');
 @import "tailwindcss";
 
 @theme {
@@ -15,13 +16,14 @@
   --font-display: var(--font-cormorant), Georgia, serif;
   --font-body: var(--font-instrument), system-ui, sans-serif;
   --font-mono: var(--font-space-mono), ui-monospace, monospace;
+  --font-gothic: "UnifrakturCook", "Pirata One", cursive;
 }
 
 :root {
   /* Live accent — swappable at runtime via the theme control */
-  --accent: #B98A5E;
-  --accent-rgb: 199, 147, 102;
-  --accent-text: #B98A5E;
+  --accent: #e5b229;
+  --accent-rgb: 229, 178, 41;
+  --accent-text: #e5b229;
 
   /* rgb of the ink token, for inline rgba() borders/overlays */
   --ink-rgb: 242, 239, 233;
@@ -90,7 +92,7 @@ body {
 /* Panels that sit over dark photography / the 3D viewer keep light ink in
    both themes — pin the ink token locally so inner text/borders stay light. */
 .on-media {
-  --color-cream: #f2efe9;
+  --color-cream: #ffffff;
   --ink-rgb: 242, 239, 233;
 }
 
@@ -245,3 +247,21 @@ body {
   background: var(--accent);
   color: var(--color-base);
 }
+
+.font-gothic {
+  font-family: 'UnifrakturCook', 'Pirata One', cursive;
+}
+
+/* Heretic / Gold display styling */
+.gold-display-text {
+  color: #e5b229;
+  background: linear-gradient(180deg, #fce077 0%, #e5b229 40%, #c99318 85%, #9b6c08 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 4px 24px rgba(229, 178, 41, 0.2));
+}
+
+.gold-accent {
+  color: #e5b229;
+}
+

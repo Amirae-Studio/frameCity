@@ -1,160 +1,180 @@
 "use client";
 
-import dynamic from "next/dynamic";
-import { motion, useScroll, useTransform, type Variants } from "framer-motion";
-import { useRef } from "react";
-import LightRays from "./ui/LightRays";
-import { Button } from "./ui/Button";
+import { useRef, useState, useEffect } from "react";
+import { motion, useMotionValue, useSpring, useTransform, useScroll } from "framer-motion";
+import { useTheme } from "@/lib/theme";
 
-const HeroModelScene = dynamic(() => import("./HeroModelScene"), {
-  ssr: false,
-  loading: () => (
-    <div className="flex h-full w-full items-center justify-center">
-      <span className="font-mono text-[10px] uppercase tracking-[0.24em] text-cream/40 animate-pulse">
-        Loading 3D Skyline…
-      </span>
-    </div>
-  ),
-});
-
-const rise: Variants = {
-  hidden: { opacity: 0, y: 30 },
-  show: (i: number) => ({
-    opacity: 1,
-    y: 0,
-    transition: { duration: 0.9, delay: i, ease: [0.16, 1, 0.3, 1] },
-  }),
-};
-
-// Continuous floating loop for the 3D model block
-const floatAnimation = {
-  animate: {
-    y: [0, -12, 0],
-    rotateX: [0, 1.5, 0],
-    transition: {
-      duration: 6,
-      repeat: Infinity,
-      ease: "easeInOut",
-    },
-  },
-};
 
 export function Hero() {
-  const sectionRef = useRef<HTMLElement>(null);
+  const containerRef = useRef<HTMLElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [headlineIndex, setHeadlineIndex] = useState(0);
+  const { mode } = useTheme();
+  const isLight = mode === "light";
 
+  useEffect(() => {
+    if (videoRef.current) {
+      videoRef.current.play().catch(() => {
+        // Autoplay policy fallback: video remains muted and plays
+      });
+    }
+  }, []);
+
+  // Reload video when theme changes so the correct source is used
+  useEffect(() => {
+    if (videoRef.current) {
+      videoRef.current.load();
+      videoRef.current.play().catch(() => {});
+    }
+  }, [mode]);
+
+  // Scroll parallax
   const { scrollYProgress } = useScroll({
-    target: sectionRef,
+    target: containerRef,
     offset: ["start start", "end start"],
   });
+  const textParallaxY = useTransform(scrollYProgress, [0, 1], ["0%", "24%"]);
+  const imageParallaxY = useTransform(scrollYProgress, [0, 1], ["0%", "12%"]);
+  const heroOpacity = useTransform(scrollYProgress, [0, 0.75], [1, 0]);
 
-  const textY = useTransform(scrollYProgress, [0, 1], ["0%", "18%"]);
-  const contentOpacity = useTransform(scrollYProgress, [0, 0.6], [1, 0]);
+  // Smooth mouse tilt interaction
+  const mouseX = useMotionValue(0);
+  const mouseY = useMotionValue(0);
+
+  const springConfig = { damping: 25, stiffness: 120 };
+  const smoothRotateX = useSpring(useTransform(mouseY, [-0.5, 0.5], [6, -6]), springConfig);
+  const smoothRotateY = useSpring(useTransform(mouseX, [-0.5, 0.5], [-8, 8]), springConfig);
+  const smoothTranslateX = useSpring(useTransform(mouseX, [-0.5, 0.5], [-12, 12]), springConfig);
+  const smoothTranslateY = useSpring(useTransform(mouseY, [-0.5, 0.5], [-8, 8]), springConfig);
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLElement>) => {
+    if (!containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    const x = (e.clientX - rect.left) / rect.width - 0.5;
+    const y = (e.clientY - rect.top) / rect.height - 0.5;
+    mouseX.set(x);
+    mouseY.set(y);
+  };
+
+  const handleMouseLeave = () => {
+    mouseX.set(0);
+    mouseY.set(0);
+  };
 
   return (
     <section
-      ref={sectionRef}
-      className="force-dark relative flex flex-col justify-between overflow-hidden border-b border-cream/[0.08] bg-base md:block md:min-h-[640px]"
+      ref={containerRef}
+      onMouseMove={handleMouseMove}
+      onMouseLeave={handleMouseLeave}
+      className={`relative min-h-[92vh] md:min-h-[96vh] w-full overflow-hidden flex flex-col justify-between px-6 py-7 sm:px-10 sm:py-9 md:px-14 md:py-10 select-none transition-colors duration-500 ${
+        isLight
+          ? "bg-[var(--color-base)] text-[var(--color-cream)] border-b border-black/[0.07]"
+          : "force-dark bg-[black] text-[#f2efe9] border-b border-white/[0.07]"
+      }`}
     >
-      {/* Background Ambient Glow */}
-      <div className="absolute -left-[10%] top-[-10%] h-[350px] w-[350px] rounded-full bg-white/5 blur-[120px] pointer-events-none" />
-
-      {/* Light Rays Background Canvas */}
-      <div className="absolute inset-0 z-[0] pointer-events-none flex items-center justify-center opacity-80 transition-opacity duration-700 hover:opacity-100">
-        <LightRays
-          raysOrigin="top-right"
-          raysColor="#faf9f5"
-          raysSpeed={1.2}
-          lightSpread={2.8}
-          rayLength={4.5}
-          pulsating={true}
-          fadeDistance={3.5}
-          saturation={0.4}
-          followMouse={true}
-          mouseInfluence={0.25}
-          distortion={0.12}
-          noiseAmount={0.015}
-        />
+      {/* Ambient background accent aura & subtle grain */}
+      <div className="absolute inset-0 pointer-events-none z-0">
+        <div className={`absolute left-1/2 top-1/3 -translate-x-1/2 -translate-y-1/2 h-[450px] w-[700px] max-w-full rounded-full blur-[90px] ${
+          isLight
+            ? "bg-[radial-gradient(ellipse_at_center,_rgba(var(--accent-rgb),0.14)_0%,_rgba(var(--accent-rgb),0.04)_45%,_transparent_75%)]"
+            : "bg-[radial-gradient(ellipse_at_center,_rgba(var(--accent-rgb),0.1)_0%,_rgba(var(--accent-rgb),0.02)_45%,_transparent_75%)]"
+        }`} />
+        <div className={`absolute inset-0 [background-size:32px_32px] ${
+          isLight
+            ? "bg-[radial-gradient(#000000_1px,transparent_1px)] opacity-[0.03]"
+            : "bg-[radial-gradient(#ffffff_1px,transparent_1px)] opacity-[0.02]"
+        }`} />
       </div>
 
-      {/* Main Content Area */}
+      {/* ── TOP HEADER / EYEBROW ROW (Inspired by Heretic top bar) ── */}
       <motion.div
-        style={{ y: textY, opacity: contentOpacity }}
-        className="relative z-[2] w-full max-w-[640px] px-6 pt-12 pb-6 sm:px-10 md:px-[60px] md:pt-[72px] md:pb-[72px] pointer-events-auto"
+        initial={{ opacity: 0, y: -20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
+        className="relative z-20 flex flex-col gap-4 md:flex-row md:items-start md:justify-between w-full"
       >
-        
+        {/* Top-Left Statement */}
+        <div className="max-w-70 sm:max-w-[320px]">
+          <p className="text-[10.5px] sm:text-[11.5px] leading-[1.5] text-cream/70 font-mono tracking-wide uppercase">
+            An independent studio crafting precision 1:1000 architectural cityscapes in gallery-grade frames.
+          </p>
+        </div>
 
-        {/* Heading */}
-        <motion.h1
-          custom={0.08}
-          variants={rise}
-          initial="hidden"
-          animate="show"
-          className="m-0 font-serif text-[36px] sm:text-[52px] md:text-[68px] font-normal leading-[1.08] tracking-[-0.025em]"
-        >
-          <span className="inline bg-gradient-to-b from-white via-slate-100 to-slate-400 bg-clip-text text-transparent drop-shadow-sm">
-            Sculpting the city{" "}
-          </span>
-          <br className="hidden sm:inline" />
-          <span className="inline font-serif italic bg-gradient-to-b from-white via-slate-200 to-slate-400 bg-clip-text text-transparent">
-            that shaped you.
-          </span>
-        </motion.h1>
+        {/* Top-Right Gothic Brand Wordmark */}
+        <div className="flex items-center gap-3 self-end md:self-auto">
+          <a
+            href="/"
+            aria-label="FrameCity Home"
+            className="font-gothic text-[26px] sm:text-[32px] md:text-[36px] leading-none text-[var(--accent)] tracking-wider no-underline hover:opacity-90 transition-all drop-shadow-[0_2px_12px_rgba(var(--accent-rgb),0.28)]"
+          >
+            FrameCity
+          </a>
+        </div>
+      </motion.div>
 
-        {/* Subtitle Paragraph */}
-        <motion.p
-          custom={0.14}
-          variants={rise}
-          initial="hidden"
-          animate="show"
-          className="mt-4 sm:mt-5 max-w-[420px] text-[14px] sm:text-[15px] md:text-[16px] leading-[1.65] text-cream/75 font-light"
-        >
-          Detailed 3D cityscapes crafted into refined framed art for your space. We bring your favorite locations to life through precision 1:1000 scale architectural relief models that turn memory into lasting gallery-grade art.
-        </motion.p>
-
-        {/* Interactive CTA Buttons */}
+      {/* ── CENTER HERO STAGE (Massive Gothic Title + 3D City Model) ── */}
+      <motion.div
+        style={{ opacity: heroOpacity }}
+        className="relative z-10 my-auto flex flex-col items-center justify-center min-h-[460px] sm:min-h-[520px] md:min-h-[580px] w-full py-8"
+      >
+     
+          <h1
+            className="font-gothic text-[54px] xs:text-[68px] sm:text-[96px] md:text-[102px]  tracking-tight text-center whitespace-nowrap gold-display-text select-none transition-all duration-500 py-3 px-2 inline-block"
+          >
+            High detailed cities in frames
+          </h1>
+        {/* 3D Architectural City Model with Interactive Parallax */}
         <motion.div
-          custom={0.2}
-          variants={rise}
-          initial="hidden"
-          animate="show"
-          className="mt-7 md:mt-9 flex flex-col sm:flex-row gap-3.5 sm:gap-4"
+          style={{
+            y: imageParallaxY,
+            rotateX: smoothRotateX,
+            rotateY: smoothRotateY,
+            x: smoothTranslateX,
+            translateY: smoothTranslateY,
+            transformPerspective: 1200,
+          }}
+          initial={{ opacity: 0, y: 40, scale: 0.92 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          transition={{ duration: 1.2, delay: 0.15, ease: [0.16, 1, 0.3, 1] }}
+          className="relative z-10 w-full max-w-full -mt-16 sm:-mt-24 md:-mt-36 lg:-mt-56 pointer-events-none flex items-center justify-center"
         >
-          <Button
-            variant="primary"
-            href="https://makerworld.com/en/crowdfunding/313-framecity-high-detailed-cities-in-frames"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="w-full sm:w-auto text-center justify-center shadow-lg shadow-white/5 hover:scale-[1.02] active:scale-[0.98] transition-transform duration-200"
-          >
-            Back now
-          </Button>
+          {/* Ambient Glow immediately behind city model */}
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[80%] h-[55%] bg-[var(--accent)]/10 blur-[70px] rounded-full pointer-events-none" />
 
-          <Button
-            variant="secondary"
-            href="#film"
-            className="w-full sm:w-auto text-center justify-center gap-2.5 backdrop-blur-md hover:bg-cream/10 hover:scale-[1.02] active:scale-[0.98] transition-all duration-200"
-          >
-            <span className="inline-block h-0 w-0 border-b-[4px] border-l-[6px] border-t-[4px] border-b-transparent border-l-cream border-t-transparent" />
-            Watch the film
-          </Button>
+          {/* City Model Looping Transparent Video with seamless black blend and floor reflection */}
+          <div className={`relative w-full flex items-center justify-center filter ${
+            isLight
+              ? "drop-shadow-[0_20px_60px_rgba(0,0,0,0.15)]"
+              : "drop-shadow-[0_20px_60px_rgba(0,0,0,0.95)]"
+          }`}>
+            <video
+              ref={videoRef}
+              autoPlay
+              loop
+              muted
+              playsInline
+              preload="auto"
+              poster="/hero-city.jpg"
+              className="h-full w-full object-contain pointer-events-auto"
+              style={{
+                maskImage: "linear-gradient(to bottom, black 0%, black 84%, rgba(0,0,0,0.6) 92%, transparent 100%)",
+                WebkitMaskImage: "linear-gradient(to bottom, black 0%, black 84%, rgba(0,0,0,0.6) 92%, transparent 100%)",
+              }}
+            >
+              <source
+                src={
+                  isLight
+                    ? "https://joewkzjnrikotpgzyywh.supabase.co/storage/v1/object/public/gallery/videos/hero-animation-white.webm"
+                    : "https://joewkzjnrikotpgzyywh.supabase.co/storage/v1/object/public/gallery/videos/hero-animation.webm"
+                }
+                type="video/webm"
+              />
+              <source src="/hero-animation.webm" type="video/webm" />
+            </video>
+          </div>
         </motion.div>
       </motion.div>
 
-      {/* Floating 3D Model Scene Wrapper */}
-      <motion.div
-        initial={{ opacity: 0, scale: 0.92 }}
-        animate={{ opacity: 1, scale: 1 }}
-        transition={{ duration: 1.2, ease: [0.16, 1, 0.3, 1] }}
-        className="relative z-[1] h-[300px] w-full flex items-center justify-center opacity-95 md:absolute md:right-4 md:top-1/2 md:-translate-y-1/2 md:h-[90%] md:w-[52%] lg:right-10"
-      >
-        <motion.div
-          variants={floatAnimation}
-          animate="animate"
-          className="h-full w-full flex items-center justify-center"
-        >
-          <HeroModelScene />
-        </motion.div>
-      </motion.div>
     </section>
   );
 }
