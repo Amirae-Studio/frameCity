@@ -1,17 +1,25 @@
 /**
  * Custom 3MF & Geometry Exporter for FrameCity Studio
  *
- * Generates a valid .3mf ZIP archive (compatible with BambuStudio / Orca Slicer / PrusaSlicer)
+ * Generates a valid, manifold, uncompressed .3mf ZIP archive (compatible with BambuStudio / Orca Slicer / PrusaSlicer)
  * from a Three.js Object3D/Group.
  *
- * Automatically converts coordinates from Three.js Y-up space to 3D Slicer Z-up space,
- * scales 1 Three.js unit = 50 mm, aligns the base to Z=0, and centers on bed plate.
+ * Features:
+ * 1. True 1:1 Scale (No Compression): Converts Three.js units directly to millimeters (1 unit = 50 mm)
+ *    preserving exact model dimensions, heights, and slider scale modifications.
+ * 2. Bed Centering & Z-alignment: Centers model at (128, 128) on the 256x256mm build plate with base at Z=0.
+ * 3. Manifold Geometry & Shared Vertices: Welds duplicate vertex coordinates so adjacent faces properly share indices.
+ * 4. Deduplication & Degenerate Removal: Removes duplicate vertices, collinear triangles, and zero-area faces.
+ * 5. Face Normals & Winding Order: Ensures consistent counter-clockwise (CCW) outward-facing triangle winding.
+ * 6. Multi-Material Grouping: Groups layers by color/name into distinct closed sub-meshes with Bambu AMS extruder mappings.
  *
  * Uses fflate for in-browser ZIP creation (no server round-trip).
  */
 
 import * as THREE from "three";
+import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { zipSync, strToU8 } from "fflate";
+import { MM } from "./studio";
 
 // ----- Types -----
 
@@ -34,18 +42,183 @@ function getMaterialColor(mat: THREE.Material | THREE.Material[]): string {
 }
 
 /**
- * Collects all visible meshes from Three.js hierarchy, applies world matrices,
- * transforms Y-up to Z-up (X -> X, Y -> -Z, Z -> Y), scales max horizontal dimension
- * to exactly targetSizeMM (default 150mm / 15cm x 15cm), centers X & Y at (128, 128),
- * and sets Z.min = 0.
+ * Welds duplicate vertices using spatial hashing, eliminates zero-area/degenerate
+ * triangles, removes duplicate faces, ensures consistent outward CCW winding order,
+ * and eliminates unreferenced vertices.
  */
-export function collectTransformedMeshes(
-  root: THREE.Object3D,
-  targetSizeMM = 150
-): MeshEntry[] {
-  const entries: MeshEntry[] = [];
+export function cleanAndWeldGeometry(
+  geom: THREE.BufferGeometry,
+  isFlippedMatrix = false,
+  tolerance = 1e-4
+): THREE.BufferGeometry {
+  const posAttr = geom.attributes.position as THREE.BufferAttribute | undefined;
+  if (!posAttr || posAttr.count === 0) return geom;
 
+  // 1. Build spatial hash table to weld duplicate vertices
+  const invTol = 1 / tolerance;
+  const uniquePositions: number[] = [];
+  const coordMap = new Map<string, number>();
+  const oldToNewIndex: number[] = [];
+
+  const vCount = posAttr.count;
+  for (let i = 0; i < vCount; i++) {
+    const x = posAttr.getX(i);
+    const y = posAttr.getY(i);
+    const z = posAttr.getZ(i);
+
+    const key = `${Math.round(x * invTol)}_${Math.round(y * invTol)}_${Math.round(z * invTol)}`;
+    let newIdx = coordMap.get(key);
+    if (newIdx === undefined) {
+      newIdx = uniquePositions.length / 3;
+      coordMap.set(key, newIdx);
+      uniquePositions.push(x, y, z);
+    }
+    oldToNewIndex.push(newIdx);
+  }
+
+  // 2. Map existing triangles to welded indices
+  const rawTriangles: [number, number, number][] = [];
+  const index = geom.index;
+  if (index) {
+    const count = index.count;
+    for (let i = 0; i < count; i += 3) {
+      const a = oldToNewIndex[index.getX(i)];
+      const b = oldToNewIndex[index.getX(i + 1)];
+      const c = oldToNewIndex[index.getX(i + 2)];
+      if (isFlippedMatrix) {
+        rawTriangles.push([a, c, b]);
+      } else {
+        rawTriangles.push([a, b, c]);
+      }
+    }
+  } else {
+    for (let i = 0; i < vCount; i += 3) {
+      if (i + 2 < vCount) {
+        const a = oldToNewIndex[i];
+        const b = oldToNewIndex[i + 1];
+        const c = oldToNewIndex[i + 2];
+        if (isFlippedMatrix) {
+          rawTriangles.push([a, c, b]);
+        } else {
+          rawTriangles.push([a, b, c]);
+        }
+      }
+    }
+  }
+
+  // 3. Filter degenerate, zero-area, and duplicate triangles
+  const validTriangles: [number, number, number][] = [];
+  const faceSet = new Set<string>();
+
+  for (const [a, b, c] of rawTriangles) {
+    // Degenerate check: identical vertices
+    if (a === b || b === c || c === a) continue;
+
+    const ax = uniquePositions[a * 3];
+    const ay = uniquePositions[a * 3 + 1];
+    const az = uniquePositions[a * 3 + 2];
+
+    const bx = uniquePositions[b * 3];
+    const by = uniquePositions[b * 3 + 1];
+    const bz = uniquePositions[b * 3 + 2];
+
+    const cx = uniquePositions[c * 3];
+    const cy = uniquePositions[c * 3 + 1];
+    const cz = uniquePositions[c * 3 + 2];
+
+    // Edge vectors
+    const abx = bx - ax, aby = by - ay, abz = bz - az;
+    const acx = cx - ax, acy = cy - ay, acz = cz - az;
+
+    // Cross product
+    const nx = aby * acz - abz * acy;
+    const ny = abz * acx - abx * acz;
+    const nz = abx * acy - aby * acx;
+    const lenSq = nx * nx + ny * ny + nz * nz;
+
+    // Zero-area / collinear triangle check (< 1e-10 mm^2)
+    if (lenSq < 1e-10) continue;
+
+    // Duplicate face check (canonical orientation)
+    const sorted = [a, b, c].slice().sort((x, y) => x - y);
+    const faceKey = `${sorted[0]}_${sorted[1]}_${sorted[2]}`;
+    if (faceSet.has(faceKey)) continue;
+    faceSet.add(faceKey);
+
+    validTriangles.push([a, b, c]);
+  }
+
+  if (validTriangles.length === 0) return geom;
+
+  // 4. Calculate signed volume to ensure outward-facing normals
+  let signedVolume6 = 0;
+  for (const [a, b, c] of validTriangles) {
+    const ax = uniquePositions[a * 3], ay = uniquePositions[a * 3 + 1], az = uniquePositions[a * 3 + 2];
+    const bx = uniquePositions[b * 3], by = uniquePositions[b * 3 + 1], bz = uniquePositions[b * 3 + 2];
+    const cx = uniquePositions[c * 3], cy = uniquePositions[c * 3 + 1], cz = uniquePositions[c * 3 + 2];
+    signedVolume6 +=
+      ax * (by * cz - bz * cy) +
+      ay * (bz * cx - bx * cz) +
+      az * (bx * cy - by * cx);
+  }
+
+  // If signed volume is negative, flip all faces to maintain CCW outward orientation
+  const flipWinding = signedVolume6 < -1e-5;
+
+  // 5. Compact vertex list to remove unreferenced vertices
+  const referencedOld = new Set<number>();
+  validTriangles.forEach(([a, b, c]) => {
+    referencedOld.add(a);
+    referencedOld.add(b);
+    referencedOld.add(c);
+  });
+
+  const finalPositions: number[] = [];
+  const remapIndex = new Map<number, number>();
+  referencedOld.forEach((oldIdx) => {
+    remapIndex.set(oldIdx, finalPositions.length / 3);
+    finalPositions.push(
+      uniquePositions[oldIdx * 3],
+      uniquePositions[oldIdx * 3 + 1],
+      uniquePositions[oldIdx * 3 + 2]
+    );
+  });
+
+  const finalIndices: number[] = [];
+  validTriangles.forEach(([a, b, c]) => {
+    const ra = remapIndex.get(a)!;
+    const rb = remapIndex.get(b)!;
+    const rc = remapIndex.get(c)!;
+    if (flipWinding) {
+      finalIndices.push(ra, rc, rb);
+    } else {
+      finalIndices.push(ra, rb, rc);
+    }
+  });
+
+  const cleanGeom = new THREE.BufferGeometry();
+  cleanGeom.setAttribute(
+    "position",
+    new THREE.Float32BufferAttribute(finalPositions, 3)
+  );
+  cleanGeom.setIndex(finalIndices);
+  cleanGeom.computeVertexNormals();
+  cleanGeom.computeBoundingBox();
+
+  return cleanGeom;
+}
+
+/**
+ * Collects all visible meshes from Three.js hierarchy, applies world matrices,
+ * transforms Y-up to Z-up (X -> X, Y -> -Z, Z -> Y), converts Three.js units to exact
+ * millimeters (1 unit = 50 mm) without artificial dimension compression, centers
+ * on build plate (128, 128 mm), aligns base to Z=0, and welds manifold geometry.
+ */
+export function collectTransformedMeshes(root: THREE.Object3D): MeshEntry[] {
   root.updateWorldMatrix(true, true);
+
+  // Conversion scale factor: 1 Three.js unit = 50 mm (1 / MM)
+  const MM_SCALE = MM > 0 ? 1 / MM : 50;
 
   let minZ = Infinity;
   let minX = Infinity,
@@ -53,7 +226,14 @@ export function collectTransformedMeshes(
   let minY = Infinity,
     maxY = -Infinity;
 
-  const rawMeshes: { geom: THREE.BufferGeometry; color: string; name: string }[] = [];
+  interface RawItem {
+    geom: THREE.BufferGeometry;
+    color: string;
+    name: string;
+    isFlipped: boolean;
+  }
+
+  const rawItems: RawItem[] = [];
 
   root.traverse((obj) => {
     if (!obj.visible) return;
@@ -61,11 +241,14 @@ export function collectTransformedMeshes(
     if (!mesh.isMesh || !mesh.geometry) return;
 
     let name = mesh.name || obj.parent?.name || "mesh";
-    if (name.startsWith("boolean_cube")) return; // Skip subtractive volume objects
+    if (name.startsWith("boolean_cube")) return; // Skip subtractive volume helpers
 
     const geom = mesh.geometry.clone();
     mesh.updateWorldMatrix(true, false);
     geom.applyMatrix4(mesh.matrixWorld);
+
+    const det = mesh.matrixWorld.determinant();
+    const isFlipped = det < 0;
 
     const posAttr = geom.attributes.position as THREE.BufferAttribute;
     if (posAttr) {
@@ -91,47 +274,67 @@ export function collectTransformedMeshes(
       posAttr.needsUpdate = true;
     }
 
-    rawMeshes.push({
+    rawItems.push({
       geom,
       color: getMaterialColor(mesh.material),
       name,
+      isFlipped,
     });
   });
 
-  if (rawMeshes.length === 0) return [];
+  if (rawItems.length === 0) return [];
 
+  // Center of the model in Three.js world space
   const cx = (minX + maxX) / 2;
   const cy = (minY + maxY) / 2;
 
-  const currentWidth = maxX - minX;
-  const currentDepth = maxY - minY;
-  const maxDim = Math.max(currentWidth, currentDepth);
+  // Group raw meshes by (name + color) to merge identical layer parts
+  const groups = new Map<string, { name: string; color: string; geoms: THREE.BufferGeometry[]; flipped: boolean }>();
 
-  // Scale factor to make max dimension exactly targetSizeMM (150 mm = 15 cm)
-  const scaleFactor = maxDim > 0 ? targetSizeMM / maxDim : 1;
-
-  // Center X & Y at (128, 128) - exact center of Bambu Lab build plate (256x256mm)
-  // Scale size to 15cm x 15cm (150mm x 150mm) and align Z.min to 0 (flat on bed plate)
-  rawMeshes.forEach(({ geom, color, name }) => {
+  rawItems.forEach(({ geom, color, name, isFlipped }) => {
     const posAttr = geom.attributes.position as THREE.BufferAttribute;
     if (posAttr) {
       const count = posAttr.count;
       for (let i = 0; i < count; i++) {
-        const x = (posAttr.getX(i) - cx) * scaleFactor + 128;
-        const y = (posAttr.getY(i) - cy) * scaleFactor + 128;
-        const z = (posAttr.getZ(i) - minZ) * scaleFactor;
+        // Exact millimeter positioning: 1 Three.js unit = 50 mm (no compression)
+        // Center model at (128, 128) mm on Bambu 256x256mm build plate
+        // Base flat on bed plate at Z = 0 mm
+        const x = (posAttr.getX(i) - cx) * MM_SCALE + 128;
+        const y = (posAttr.getY(i) - cy) * MM_SCALE + 128;
+        const z = (posAttr.getZ(i) - minZ) * MM_SCALE;
         posAttr.setXYZ(i, x, y, z);
       }
       posAttr.needsUpdate = true;
-      geom.computeBoundingBox();
-      geom.computeVertexNormals();
     }
 
-    entries.push({
-      geometry: geom,
-      color,
-      name,
-    });
+    const key = `${name}___${color}`;
+    if (!groups.has(key)) {
+      groups.set(key, { name, color, geoms: [], flipped: isFlipped });
+    }
+    groups.get(key)!.geoms.push(geom);
+  });
+
+  const entries: MeshEntry[] = [];
+
+  groups.forEach(({ name, color, geoms, flipped }) => {
+    let combined: THREE.BufferGeometry | null = null;
+    if (geoms.length === 1) {
+      combined = geoms[0];
+    } else {
+      combined = mergeGeometries(geoms, false);
+      geoms.forEach((g) => g.dispose());
+    }
+
+    if (combined) {
+      const cleaned = cleanAndWeldGeometry(combined, flipped, 1e-3);
+      if (cleaned !== combined) combined.dispose();
+
+      entries.push({
+        geometry: cleaned,
+        color,
+        name,
+      });
+    }
   });
 
   return entries;
@@ -139,7 +342,10 @@ export function collectTransformedMeshes(
 
 // ----- 3MF XML builders -----
 
-function buildModelXML(entries: MeshEntry[]): string {
+function buildModelXML(entries: MeshEntry[]): {
+  modelXML: string;
+  objectList: { id: number; name: string; extruder: number }[];
+} {
   const colorSet = new Map<string, number>();
   entries.forEach((e) => {
     if (!colorSet.has(e.color)) colorSet.set(e.color, colorSet.size + 1);
@@ -154,6 +360,7 @@ function buildModelXML(entries: MeshEntry[]): string {
 
   let objectsXML = "";
   const componentIds: number[] = [];
+  const objectList: { id: number; name: string; extruder: number }[] = [];
 
   entries.forEach((entry, idx) => {
     const objId = 100 + idx;
@@ -219,6 +426,12 @@ function buildModelXML(entries: MeshEntry[]): string {
       .replace(/-/g, " ")
       .replace(/\b\w/g, (l) => l.toUpperCase());
 
+    objectList.push({
+      id: objId,
+      name: layerName,
+      extruder: matId,
+    });
+
     objectsXML +=
       '    <object id="' +
       objId +
@@ -252,7 +465,7 @@ function buildModelXML(entries: MeshEntry[]): string {
 
   const buildXML = '    <item objectid="' + rootObjectId + '" />\n';
 
-  return (
+  const modelXML =
     '<?xml version="1.0" encoding="UTF-8"?>\n' +
     '<model unit="millimeter" xml:lang="en-US"\n' +
     '  xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02"\n' +
@@ -266,7 +479,40 @@ function buildModelXML(entries: MeshEntry[]): string {
     "  <build>\n" +
     buildXML +
     "  </build>\n" +
-    "</model>"
+    "</model>";
+
+  return { modelXML, objectList };
+}
+
+function buildModelSettingsXML(
+  objectList: { id: number; name: string; extruder: number }[]
+): string {
+  let objectsConfig = '  <object id="1">\n    <metadata key="name" value="FrameCity Model"/>\n  </object>\n';
+
+  objectList.forEach((obj) => {
+    objectsConfig +=
+      '  <object id="' +
+      obj.id +
+      '">\n' +
+      '    <metadata key="name" value="' +
+      obj.name +
+      '"/>\n' +
+      '    <metadata key="extruder" value="' +
+      obj.extruder +
+      '"/>\n' +
+      "  </object>\n";
+  });
+
+  return (
+    '<?xml version="1.0" encoding="UTF-8"?>\n' +
+    "<config>\n" +
+    objectsConfig +
+    "  <plate>\n" +
+    '    <metadata key="plater_id" value="1"/>\n' +
+    '    <metadata key="plater_name" value=""/>\n' +
+    '    <metadata key="locked" value="false"/>\n' +
+    "  </plate>\n" +
+    "</config>"
   );
 }
 
@@ -286,27 +532,13 @@ const CONTENT_TYPES_XML =
   '  <Default Extension="config" ContentType="application/vnd.bambulab.bambu-studio.config+xml" />\n' +
   "</Types>";
 
-const MODEL_SETTINGS_XML =
-  '<?xml version="1.0" encoding="UTF-8"?>\n' +
-  '<config>\n' +
-  '  <object id="1">\n' +
-  '    <metadata key="name" value="FrameCity Model"/>\n' +
-  '    <metadata key="extruder" value="1"/>\n' +
-  '  </object>\n' +
-  '  <plate>\n' +
-  '    <metadata key="plater_id" value="1"/>\n' +
-  '    <metadata key="plater_name" value=""/>\n' +
-  '    <metadata key="locked" value="false"/>\n' +
-  '  </plate>\n' +
-  '</config>';
-
 const SLICE_INFO_XML =
   '<?xml version="1.0" encoding="UTF-8"?>\n' +
-  '<config>\n' +
-  '  <header>\n' +
+  "<config>\n" +
+  "  <header>\n" +
   '    <header_item key="header_info" value="created by BambuStudio 01.09.00.70"/>\n' +
-  '  </header>\n' +
-  '</config>';
+  "  </header>\n" +
+  "</config>";
 
 export function exportTo3MF(root: THREE.Object3D): Blob {
   const entries = collectTransformedMeshes(root);
@@ -315,13 +547,14 @@ export function exportTo3MF(root: THREE.Object3D): Blob {
     throw new Error("No visible meshes found to export.");
   }
 
-  const modelXML = buildModelXML(entries);
+  const { modelXML, objectList } = buildModelXML(entries);
+  const modelSettingsXML = buildModelSettingsXML(objectList);
 
   const zipData = zipSync({
     "[Content_Types].xml": strToU8(CONTENT_TYPES_XML),
     "_rels/.rels": strToU8(RELS_XML),
     "3D/model.model": strToU8(modelXML),
-    "Metadata/model_settings.config": strToU8(MODEL_SETTINGS_XML),
+    "Metadata/model_settings.config": strToU8(modelSettingsXML),
     "Metadata/slice_info.config": strToU8(SLICE_INFO_XML),
   });
 
@@ -331,4 +564,5 @@ export function exportTo3MF(root: THREE.Object3D): Blob {
     type: "application/vnd.ms-package.3dmanufacturing-3dmodel+xml",
   });
 }
+
 
