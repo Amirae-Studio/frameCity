@@ -6,7 +6,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import type { StudioCity, StudioBuilding } from "@/lib/studio";
 import { fetchStudioCities, fetchStudioBuildings } from "@/app/studio/actions";
 import { SpotlightCard } from "../ui/SpotlightCard";
-import { ShinyText } from "../ui/ShinyText";
+import { ShinyText } from "../ui/ShinyText"; // Kept for your other potential uses
 import { StepTimeline } from "../ui/StepLine";
 
 const ease = [0.22, 1, 0.36, 1] as const;
@@ -22,7 +22,9 @@ export function StudioPicker({
 }) {
   const router = useRouter();
   const [cities, setCities] = useState<StudioCity[]>(initialCities || []);
-  const [buildings, setBuildings] = useState<StudioBuilding[]>(initialBuildings || []);
+  const [buildings, setBuildings] = useState<StudioBuilding[]>(
+    initialBuildings || []
+  );
 
   const [category, setCategory] = useState<CategoryType | null>("cities");
   const [selectedCountry, setSelectedCountry] = useState<string | null>(null);
@@ -127,14 +129,6 @@ export function StudioPicker({
             exit={{ opacity: 0, y: -14 }}
             transition={{ duration: 0.4, ease }}
           >
-
-
-            {/* <div
-              className="mb-[18px] font-mono text-[11px] font-bold uppercase tracking-[0.3em]"
-              style={{ color: "var(--accent)" }}
-            >
-              The Studio · Step 02
-            </div> */}
             <StepTimeline steps={stepLabels} currentStep={currentStepNum} />
             <h1 className="m-0 mb-3 font-display text-[40px] font-normal leading-[1.03] md:text-[52px]">
               Start with a country.
@@ -160,15 +154,19 @@ export function StudioPicker({
                   {cityCountries.map((c, i) => (
                     <SpotlightCard
                       key={c.country}
-                      className="p-6"
+                      className={`p-6 transition-all duration-300 ${
+                        c.isAvailable
+                          ? "cursor-pointer"
+                          : "opacity-40 grayscale cursor-not-allowed"
+                      }`}
                       disabled={!c.isAvailable}
-                     onClick={() => {
+                      onClick={() => {
                         if (c.isAvailable) setSelectedCountry(c.country);
                       }}
                     >
                       <div
                         className={`font-display text-[24px] font-medium ${
-                          c.isAvailable ? "" : "text-cream/40"
+                          c.isAvailable ? "" : "text-cream/70"
                         }`}
                       >
                         {c.country}
@@ -187,7 +185,7 @@ export function StudioPicker({
                           </span>
                         </div>
                       ) : (
-                        <div className="mt-2 font-mono text-[9px] font-bold uppercase tracking-[0.2em] text-cream/30">
+                        <div className="mt-2 font-mono text-[9px] font-bold uppercase tracking-[0.2em] text-cream/50">
                           coming soon
                         </div>
                       )}
@@ -209,7 +207,11 @@ export function StudioPicker({
                 {buildingCountries.map((c, i) => (
                   <SpotlightCard
                     key={c.country}
-                    className="p-6"
+                    className={`p-6 transition-all duration-300 ${
+                      c.isAvailable
+                        ? "cursor-pointer"
+                        : "opacity-40 grayscale cursor-not-allowed"
+                    }`}
                     disabled={!c.isAvailable}
                     onClick={() => {
                       if (c.isAvailable) setSelectedCountry(c.country);
@@ -217,7 +219,7 @@ export function StudioPicker({
                   >
                     <div
                       className={`font-display text-[24px] font-medium ${
-                        c.isAvailable ? "" : "text-cream/40"
+                        c.isAvailable ? "" : "text-cream/70"
                       }`}
                     >
                       {c.country}
@@ -236,7 +238,7 @@ export function StudioPicker({
                         </span>
                       </div>
                     ) : (
-                      <div className="mt-2 font-mono text-[9px] font-bold uppercase tracking-[0.2em] text-cream/30">
+                      <div className="mt-2 font-mono text-[9px] font-bold uppercase tracking-[0.2em] text-cream/50">
                         coming soon
                       </div>
                     )}
@@ -261,12 +263,6 @@ export function StudioPicker({
               <span aria-hidden>←</span> All countries
             </button>
 
-            {/* <div
-              className="mb-[18px] font-mono text-[11px] font-bold uppercase tracking-[0.3em]"
-              style={{ color: "var(--accent)" }}
-            >
-              The Studio · Step 03
-            </div> */}
             <StepTimeline steps={stepLabels} currentStep={currentStepNum} />
             <h1 className="m-0 mb-3 font-display text-[40px] font-normal leading-[1.03] md:text-[52px]">
               {selectedCountry}. <span className="italic">Select a city.</span>
@@ -277,22 +273,30 @@ export function StudioPicker({
 
             <div className="grid grid-cols-2 gap-[14px] md:grid-cols-3 lg:grid-cols-4">
               {countryCities.map((c, i) => {
-                const hasReadyLocations = c.locations.some((loc) => loc.completed !== false);
+                const hasReadyLocations = c.locations.some(
+                  (loc) => loc.completed !== false
+                );
                 const isCityAvailable = c.available && hasReadyLocations;
-                const readyCount = c.locations.filter((loc) => loc.completed !== false).length;
+                const readyCount = c.locations.filter(
+                  (loc) => loc.completed !== false
+                ).length;
 
                 return (
                   <SpotlightCard
                     key={c.slug}
-                    className="p-5"
+                    className={`p-5 transition-all duration-300 ${
+                      isCityAvailable
+                        ? "cursor-pointer"
+                        : "opacity-40 grayscale cursor-not-allowed"
+                    }`}
                     disabled={!isCityAvailable}
-                   onClick={() => {
+                    onClick={() => {
                       if (isCityAvailable) setCitySlug(c.slug);
                     }}
                   >
                     <div
                       className={`font-display text-[22px] font-medium ${
-                        isCityAvailable ? "" : "text-cream/40"
+                        isCityAvailable ? "" : "text-cream/70"
                       }`}
                     >
                       {c.name}
@@ -309,7 +313,7 @@ export function StudioPicker({
                         </span>
                       </div>
                     ) : (
-                      <div className="mt-1.5 font-mono text-[9px] font-bold uppercase tracking-[0.2em] text-cream/30">
+                      <div className="mt-1.5 font-mono text-[9px] font-bold uppercase tracking-[0.2em] text-cream/50">
                         coming soon
                       </div>
                     )}
@@ -334,12 +338,6 @@ export function StudioPicker({
               <span aria-hidden>←</span> Cities in {selectedCountry}
             </button>
 
-            {/* <div
-              className="mb-[18px] font-mono text-[11px] font-bold uppercase tracking-[0.3em]"
-              style={{ color: "var(--accent)" }}
-            >
-              The Studio · Step 04
-            </div> */}
             <StepTimeline steps={stepLabels} currentStep={currentStepNum} />
             <h1 className="m-0 mb-3 font-display text-[40px] font-normal leading-[1.03] md:text-[52px]">
               {city.name}. <span className="italic">Now the block.</span>
@@ -355,9 +353,13 @@ export function StudioPicker({
                 return (
                   <SpotlightCard
                     key={loc.slug}
-                    className="flex items-center justify-between gap-4 px-6 py-5"
+                    className={`flex items-center justify-between gap-4 px-6 py-5 transition-all duration-300 ${
+                      isReady
+                        ? "cursor-pointer"
+                        : "opacity-40 grayscale cursor-not-allowed"
+                    }`}
                     disabled={!isReady}
-                   onClick={() => {
+                    onClick={() => {
                       if (isReady) {
                         router.push(
                           `/studio/configure?type=city&city=${city.slug}&location=${loc.slug}`
@@ -369,7 +371,7 @@ export function StudioPicker({
                       <div className="flex items-center gap-2.5">
                         <span
                           className={`font-display text-[21px] font-medium ${
-                            isReady ? "" : "text-cream/40"
+                            isReady ? "" : "text-cream/70"
                           }`}
                         >
                           {loc.name}
@@ -392,8 +394,8 @@ export function StudioPicker({
                           →
                         </span>
                       ) : (
-                        <span className="font-mono text-[10px] text-cream/30" aria-hidden>
-                          🚫
+                        <span className="font-mono text-[9px] font-bold uppercase tracking-[0.2em] text-cream/50">
+                          soon
                         </span>
                       )}
                     </div>
@@ -418,12 +420,6 @@ export function StudioPicker({
               <span aria-hidden>←</span> All countries
             </button>
 
-            {/* <div
-              className="mb-[18px] font-mono text-[11px] font-bold uppercase tracking-[0.3em]"
-              style={{ color: "var(--accent)" }}
-            >
-              The Studio · Step 03
-            </div> */}
             <StepTimeline steps={stepLabels} currentStep={currentStepNum} />
             <h1 className="m-0 mb-3 font-display text-[40px] font-normal leading-[1.03] md:text-[52px]">
               {selectedCountry}. <span className="italic">Select a building.</span>
@@ -438,7 +434,11 @@ export function StudioPicker({
                 return (
                   <SpotlightCard
                     key={b.slug}
-                    className="flex items-center justify-between gap-4 px-6 py-5"
+                    className={`flex items-center justify-between gap-4 px-6 py-5 transition-all duration-300 ${
+                      isReady
+                        ? "cursor-pointer"
+                        : "opacity-40 grayscale cursor-not-allowed"
+                    }`}
                     disabled={!isReady}
                     onClick={() => {
                       if (isReady) {
@@ -452,7 +452,7 @@ export function StudioPicker({
                       <div className="flex items-center gap-2.5">
                         <span
                           className={`font-display text-[21px] font-medium ${
-                            isReady ? "" : "text-cream/40"
+                            isReady ? "" : "text-cream/70"
                           }`}
                         >
                           {b.name}
@@ -477,8 +477,8 @@ export function StudioPicker({
                           →
                         </span>
                       ) : (
-                        <span className="font-mono text-[10px] text-cream/30" aria-hidden>
-                          🚫
+                        <span className="font-mono text-[9px] font-bold uppercase tracking-[0.2em] text-cream/50">
+                          soon
                         </span>
                       )}
                     </div>

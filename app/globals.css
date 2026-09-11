@@ -16,7 +16,7 @@
   --font-display: var(--font-cormorant), Georgia, serif;
   --font-body: var(--font-instrument), system-ui, sans-serif;
   --font-mono: var(--font-space-mono), ui-monospace, monospace;
-  --font-gothic: "UnifrakturCook", "Pirata One", cursive;
+  --font-gothic: cursive;
 }
 
 :root {
@@ -249,7 +249,7 @@ body {
 }
 
 .font-gothic {
-  font-family: 'UnifrakturCook', 'Pirata One', cursive;
+
 }
 
 /* Heretic / Gold display styling */
