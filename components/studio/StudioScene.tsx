@@ -223,20 +223,14 @@ function CityAssembly({
       const geomObj = Array.isArray(stls) ? stls[i] : stls;
       if (geomObj) {
         const g = (geomObj as THREE.BufferGeometry).clone();
+        
+        // Blender uses Z as up and Y as forward. 
+        // Three.js uses Y as up and -Z as forward.
+        // Rotate -90 degrees around X to map Blender's coordinates to Three.js
+        g.rotateX(-Math.PI / 2);
+        
         g.computeVertexNormals();
         g.computeBoundingBox();
-
-        // Check if STL is Z-up (if Z height > Y and X)
-        const size = new THREE.Vector3();
-        if (g.boundingBox) {
-          g.boundingBox.getSize(size);
-          if (size.z > size.y && size.z > size.x) {
-            g.rotateX(-Math.PI / 2);
-            g.center();
-            g.computeVertexNormals();
-            g.computeBoundingBox();
-          }
-        }
 
         const mat = new THREE.MeshStandardMaterial({
           color: "#e9e6df",
