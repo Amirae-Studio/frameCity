@@ -853,7 +853,7 @@ export function StudioConfigurator({
                       onCheckedChange={(v) => setCtl("enableRevit", v)}
                     />
                     {cityCtl.enableRevit && (
-                      <div className="flex flex-col gap-3.5 border-l border-[var(--accent)]/40 pl-3.5 pt-1">
+                      <div className="flex flex-col gap-3.5 pl-3.5 pt-1">
                         <Scrubber
                           label={`Frame height (${(cityCtl.revitHeight / 100).toFixed(1)} cm)`}
                           value={cityCtl.revitHeight}

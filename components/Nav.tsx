@@ -126,7 +126,8 @@ export function Nav({ initialUser }: { initialUser: NavUser | null }) {
           ) : (
             <Button
               href="/login"
-              className="hidden text-[13px] font-medium text-cream/90 no-underline transition-colors hover:text-cream hover:drop-shadow-md sm:inline px-2"
+              variant="secondary"
+              className="hidden text-[13px] font-medium text-cream no-underline transition-colors hover:text-cream hover:drop-shadow-md sm:inline px-2"
             >
               Sign in
             </Button>

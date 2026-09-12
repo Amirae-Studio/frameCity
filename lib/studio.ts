@@ -99,10 +99,10 @@ export const FILAMENT_LINES = [
 export const DEFAULT_LAYER_COLORS: Record<string, string> = {
   trees: "#3F8E43", // Mistletoe Green
   grass: "#3F8E43", // Bambu Green
-  terrain: "#545454", // Apricot
+  terrain: "#FFFFFF", // Apricot
   "small-building": "#FFFFFF", // Jade White
   "main-building": "#FFFFFF", // Jade White
-  roads: "#FFFFFF", // Dark Gray
+  roads: "#000000", // Dark Gray
 };
 
 // Live "Manipulate city" values (percentages + layer visibility + colors).
