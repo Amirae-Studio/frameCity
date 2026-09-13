@@ -185,64 +185,238 @@ export async function fetchStudioBuildings(): Promise<StudioBuilding[]> {
   ];
 }
 
+export type BackerTier = "merchant" | "architect" | "explorer";
+
 /**
- * Verify if a MakerWorld username exists at https://makerworld.com/en/@user_name
- * using MakerWorld's search API endpoint.
+ * Normalizes backer reward tier names into one of the three core platform tiers:
+ * - 'Patron' or 'Merchant...' -> 'merchant'
+ * - 'Architect...' -> 'architect'
+ * - 'Explorer...' -> 'explorer'
+ */
+function normalizeRewardTier(rawTier: string | null | undefined): BackerTier {
+  if (!rawTier) return "explorer";
+  const lower = rawTier.toLowerCase();
+  if (lower.includes("patron") || lower.includes("merchant")) {
+    return "merchant";
+  }
+  if (lower.includes("architect")) {
+    return "architect";
+  }
+  if (lower.includes("explorer")) {
+    return "explorer";
+  }
+  return "explorer";
+}
+
+/**
+ * Verify if a MakerWorld username exists in the Supabase `customers` table
+ * and retrieve their normalized tier from the `reward_tier` or `tier` column.
  */
 export async function verifyMakerWorldUsername(
   username: string
-): Promise<{ ok: boolean; cleanName?: string; error?: string }> {
+): Promise<{
+  ok: boolean;
+  cleanName?: string;
+  tier?: BackerTier;
+  rawTier?: string;
+  error?: string;
+}> {
   const cleanName = username.trim().replace(/^@/, "");
 
   if (!cleanName) {
     return { ok: false, error: "Please enter your MakerWorld username." };
   }
 
-  // Basic username pattern: letters, numbers, hyphens, underscores, spaces
-  if (!/^[a-zA-Z0-9_\s-]{2,50}$/.test(cleanName)) {
+  try {
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+    const serviceRoleKey =
+      process.env.SUPABASE_SERVICE_ROLE_KEY ||
+      process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!;
+
+    // Query customers table for makerworld_username matching cleanName or @cleanName
+    const res = await fetch(
+      `${supabaseUrl}/rest/v1/customers?or=(makerworld_username.ilike.${encodeURIComponent(
+        cleanName
+      )},makerworld_username.ilike.${encodeURIComponent("@" + cleanName)})&select=*&limit=1`,
+      {
+        headers: {
+          apikey: serviceRoleKey,
+          Authorization: `Bearer ${serviceRoleKey}`,
+        },
+        cache: "no-store",
+      }
+    );
+
+    if (res.ok) {
+      const customers = await res.json();
+      if (customers && customers.length > 0) {
+        const customer = customers[0];
+        const rawTier = customer.tier || customer.reward_tier || "";
+        const normalizedTier = normalizeRewardTier(rawTier);
+        const resolvedName = (customer.makerworld_username || cleanName).replace(/^@/, "");
+
+        return {
+          ok: true,
+          cleanName: resolvedName,
+          tier: normalizedTier,
+          rawTier: rawTier,
+        };
+      }
+    }
+
     return {
       ok: false,
-      error: "Username can only contain letters, numbers, hyphens, and underscores.",
+      error: `MakerWorld username "@${cleanName}" was not found in the backer database.`,
+    };
+  } catch (err) {
+    console.error("MakerWorld customer verification error:", err);
+    return { ok: false, error: "Error checking backer database." };
+  }
+}
+
+/**
+ * Redeem an access code for an authenticated user, verifying:
+ * 1. Backer exists in `customers` table and getting their reward tier
+ * 2. Access code exists in `access_codes` table and getting its tier
+ * 3. Checking that the access code tier matches the customer's reward tier
+ * 4. Redeeming code and setting profile access and tier
+ */
+export async function redeemBackerAccessCode(
+  rawCode: string,
+  rawUsername: string
+): Promise<{ ok: boolean; tier?: BackerTier; error?: string }> {
+  const code = rawCode.trim().toUpperCase();
+  const username = rawUsername.trim().replace(/^@/, "");
+
+  if (!code) {
+    return { ok: false, error: "Please enter an access code." };
+  }
+  if (!username) {
+    return { ok: false, error: "Please enter your MakerWorld username." };
+  }
+
+  // 1. Verify user session
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return { ok: false, error: "Not authenticated. Please log in first." };
+  }
+
+  // 2. Verify MakerWorld customer & tier from `customers` table
+  const verifyRes = await verifyMakerWorldUsername(username);
+  if (!verifyRes.ok || !verifyRes.cleanName || !verifyRes.tier) {
+    return {
+      ok: false,
+      error: verifyRes.error || "MakerWorld username could not be verified in backer list.",
     };
   }
 
+  const verifiedUsername = verifyRes.cleanName;
+  const customerTier = verifyRes.tier;
+
+  // 3. Fetch access code from `access_codes` table to check validity and code tier
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+  const serviceRoleKey =
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!;
+
   try {
-    const searchUrl = `https://makerworld.com/api/v1/search-service/search/user?keyword=${encodeURIComponent(cleanName)}`;
-    const response = await fetch(searchUrl, {
-      method: "GET",
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-        "Referer": "https://makerworld.com/en",
-        "Accept": "application/json, text/plain, */*",
-      },
-      cache: "no-store",
-    });
-
-    if (response.ok) {
-      const data = await response.json();
-      if (data.hits && data.hits.length > 0) {
-        const lowerClean = cleanName.toLowerCase().replace(/\s+/g, "");
-        const matched = data.hits.find(
-          (h: { handle?: string; name?: string; uid?: number }) =>
-            (h.handle && h.handle.toLowerCase().replace(/\s+/g, "") === lowerClean) ||
-            (h.name && h.name.toLowerCase().replace(/\s+/g, "") === lowerClean) ||
-            String(h.uid) === cleanName
-        );
-
-        if (matched) {
-          return { ok: true, cleanName: matched.handle || cleanName };
-        }
+    const codeRes = await fetch(
+      `${supabaseUrl}/rest/v1/access_codes?code=eq.${encodeURIComponent(code)}&select=*&limit=1`,
+      {
+        headers: {
+          apikey: serviceRoleKey,
+          Authorization: `Bearer ${serviceRoleKey}`,
+        },
+        cache: "no-store",
       }
-      return {
-        ok: false,
-        error: `MakerWorld user "@${cleanName}" was not found.`,
-      };
+    );
+
+    if (!codeRes.ok) {
+      console.error("Error fetching access code from Supabase:", await codeRes.text());
+      return { ok: false, error: "Error verifying access code in database." };
     }
 
-    return { ok: false, error: "Could not connect to MakerWorld verification service." };
+    const codeRecords = await codeRes.json();
+    if (!codeRecords || codeRecords.length === 0) {
+      return { ok: false, error: "That access code is not valid." };
+    }
+
+    const codeRecord = codeRecords[0];
+
+    if (!codeRecord.is_active) {
+      return { ok: false, error: "This access code is inactive or has been disabled." };
+    }
+
+    if (codeRecord.uses >= codeRecord.max_uses) {
+      return { ok: false, error: "That access code has already been redeemed." };
+    }
+
+    const rawCodeTier = codeRecord.tier || "explorer";
+    const codeTier = normalizeRewardTier(rawCodeTier);
+
+    // 4. Check if access code tier matches customer table tier!
+    if (codeTier !== customerTier) {
+      const codeTierName = codeTier.charAt(0).toUpperCase() + codeTier.slice(1);
+      const customerTierName = customerTier.charAt(0).toUpperCase() + customerTier.slice(1);
+      return {
+        ok: false,
+        error: `Tier mismatch: This access code is for the ${codeTierName} Tier, but your MakerWorld backer reward is for the ${customerTierName} Tier.`,
+      };
+    }
   } catch (err) {
-    console.error("MakerWorld verification error:", err);
-    return { ok: false, error: "Error checking MakerWorld username." };
+    console.error("Access code verification error:", err);
+    return { ok: false, error: "Error checking access code tier." };
   }
+
+  // 5. Redeem code atomically via RPC
+  let rpcRes = await supabase.rpc("redeem_access_code", {
+    p_code: code,
+    p_makerworld_name: verifiedUsername,
+  });
+
+  if (rpcRes.error) {
+    console.warn("2-param RPC fallback, trying 1-param RPC:", rpcRes.error.message);
+    rpcRes = await supabase.rpc("redeem_access_code", {
+      p_code: code,
+    });
+  }
+
+  const { data, error } = rpcRes;
+
+  if (error) {
+    console.error("Redeem code error:", error);
+    return { ok: false, error: error.message || "Failed to redeem access code." };
+  }
+
+  if (!data?.ok) {
+    return {
+      ok: false,
+      error:
+        data?.error === "invalid_code"
+          ? "That code isn't valid or has already been used."
+          : "Couldn't redeem the code — please try again.",
+    };
+  }
+
+  // 6. Ensure profile has the exact tier and makerworld_name
+  const { error: profileErr } = await supabase
+    .from("profiles")
+    .update({
+      has_access: true,
+      tier: customerTier,
+      makerworld_name: verifiedUsername,
+      redeemed_code: code,
+      redeemed_at: new Date().toISOString(),
+    })
+    .eq("id", user.id);
+
+  if (profileErr) {
+    console.error("Error updating profile tier:", profileErr);
+  }
+
+  return { ok: true, tier: customerTier };
 }
