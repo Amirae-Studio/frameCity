@@ -15,6 +15,8 @@ function getAdminSupabase() {
   });
 }
 
+const IMAGE_EXTENSIONS = /\.(jpg|jpeg|png|webp|gif|avif|svg|bmp|tiff|heic)$/i;
+
 async function fetchGalleryImagesFromBucket(): Promise<GalleryImage[]> {
   const supabaseAdmin = getAdminSupabase();
   const images: GalleryImage[] = [];
@@ -43,6 +45,9 @@ async function fetchGalleryImagesFromBucket(): Promise<GalleryImage[]> {
       if (!file.id && (!file.metadata || Object.keys(file.metadata).length === 0)) {
         await listFolder(fullPath);
       } else {
+        // Only include image files, exclude videos and other types
+        if (!IMAGE_EXTENSIONS.test(file.name)) continue;
+
         const { data } = supabaseAdmin.storage
           .from("gallery")
           .getPublicUrl(fullPath);

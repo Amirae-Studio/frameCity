@@ -52,7 +52,7 @@ const socialLinks = [
   },
   {
     label: "Email Support",
-    href: "mailto:framecities@gmail.com",
+    href: "mailto:contact@amirae.studio",
     icon: (
       <svg className="h-4 w-4 fill-current" viewBox="0 0 24 24">
         <path d="M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z" />
@@ -95,7 +95,7 @@ export function Footer() {
             <div className="inline-flex items-center gap-3 w-fit rounded-full border border-cream/15 bg-cream/[0.03] px-4 py-2 backdrop-blur-sm">
              
               <span className="font-mono text-xs text-cream/80">
-                Studio Enquiries: <a href="mailto:framecities@gmail.com" className="text-cream underline underline-offset-4 hover:text-[var(--accent)] transition-colors">framecities@gmail.com</a>
+                Studio Enquiries: <a href="mailto:contact@amirae.studio" className="text-cream underline underline-offset-4 hover:text-[var(--accent)] transition-colors">contact@amirae.studio</a>
               </span>
             </div>
           </Reveal>

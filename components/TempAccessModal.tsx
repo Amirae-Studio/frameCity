@@ -55,7 +55,7 @@ export function TempAccessModal({ isOpen, onClose }: TempAccessModalProps) {
               <div className="flex flex-col gap-2.5">
                 {/* Email link */}
                 <a
-                  href="mailto:framecities@gmail.com"
+                  href="mailto:contact@amirae.studio"
                   className="group flex items-center justify-between rounded-lg border border-cream/15 bg-cream/5 px-4 py-2.5 text-[13.5px] text-cream no-underline transition-colors hover:border-[color:var(--accent)] hover:bg-cream/10"
                 >
                   <span className="flex items-center gap-2.5 font-mono text-[13px]">
@@ -63,7 +63,7 @@ export function TempAccessModal({ isOpen, onClose }: TempAccessModalProps) {
                       <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
                       <polyline points="22,6 12,13 2,6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
                     </svg>
-                    framecities@gmail.com
+                    contact@amirae.studio
                   </span>
                   <span className="text-[11px] font-mono text-cream/40 group-hover:text-cream/80">Email →</span>
                 </a>
