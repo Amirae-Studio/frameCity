@@ -358,12 +358,25 @@ function CityAssembly({
     const totalH = terrainInfo ? terrainInfo.max[upAxis] - terrainInfo.min[upAxis] : 0;
     const baseHeight = totalH * 0.4;
     const currentTerrainBottom = terrainBottomAtRest - (sTerrain - 1) * baseHeight;
+
+    // When water is enabled, revit anchors below water bottom
+    let effectiveBottom = currentTerrainBottom;
+    if (controls.enableWater) {
+      const waterInfo = layerInfo.get("water");
+      if (waterInfo) {
+        const sWater = controls.water / 100;
+        const waterHeight = waterInfo.max[upAxis] - waterInfo.min[upAxis];
+        // Terrain also extends down by waterHeight*sWater, so effective bottom goes lower
+        effectiveBottom = currentTerrainBottom - waterHeight * sWater;
+      }
+    }
+
     const REVIT_OVERLAP = 0.015;
     const h = baseDimensions.height * (controls.revitHeight / 100);
-    const revitBottom = currentTerrainBottom + REVIT_OVERLAP - h;
+    const revitBottom = effectiveBottom + REVIT_OVERLAP - h;
     const lowestPoint = controls.enableRevit
-      ? Math.min(currentTerrainBottom, revitBottom)
-      : currentTerrainBottom;
+      ? Math.min(effectiveBottom, revitBottom)
+      : effectiveBottom;
     const lowestY = Math.min(boxMin[upAxis], lowestPoint);
     const totalHeight = boxMax[upAxis] - lowestY;
     return { lowestY, totalHeight };
@@ -371,6 +384,8 @@ function CityAssembly({
     controls.enableRevit,
     controls.revitHeight,
     controls.terrain,
+    controls.enableWater,
+    controls.water,
     terrainBottomAtRest,
     baseDimensions,
     boxMin,
@@ -423,6 +438,15 @@ function CityAssembly({
       const baseHeight = topThreshold - minY;
       currentTerrainBottom = minY - (sTerrain - 1) * baseHeight;
 
+      // When water is enabled, terrain must extend its bottom vertices further down
+      // to wrap around (contain) the water body visually.
+      const waterInfoLocal = layerInfo.get("water");
+      const waterExtra =
+        controls.enableWater && waterInfoLocal
+          ? (waterInfoLocal.max[upAxis] - waterInfoLocal.min[upAxis]) *
+            (controls.water / 100)
+          : 0;
+
       terrainLayer.position.set(0, 0, 0);
       terrainLayer.scale.set(1, 1, 1);
 
@@ -444,7 +468,9 @@ function CityAssembly({
 
             const yLocal = v[upAxis];
             const t = THREE.MathUtils.clamp((yLocal - minY) / (topThreshold - minY), 0, 1);
-            const delta = (1 - t) * (sTerrain - 1) * baseHeight;
+            // Bottom vertices (t=0) get full terrain extension + water depth extension.
+            // Top vertices (t=1) stay fixed — no delta.
+            const delta = (1 - t) * ((sTerrain - 1) * baseHeight + waterExtra);
             v[upAxis] = yLocal - delta;
 
             v.applyMatrix4(invMat);
@@ -458,22 +484,29 @@ function CityAssembly({
       });
     }
 
+
     // Position and scale water layer anchored at the bottom of the terrain
     const waterLayer = object.getObjectByName("water");
     const waterInfo = layerInfo.get("water");
+    let waterBottomWorld = currentTerrainBottom;
     if (waterLayer && waterInfo) {
       const sWater = controls.water / 100;
+      const waterMax = waterInfo.max[upAxis];
+      const waterHeight = waterInfo.max[upAxis] - waterInfo.min[upAxis];
       AXES.forEach((a) => {
         if (a === upAxis) {
           waterLayer.scale[a] = sWater;
-          const waterMin = waterInfo.min[a];
-          waterLayer.position[a] = currentTerrainBottom - waterMin * sWater;
+          // Anchor water TOP at terrain bottom — water hangs downward from terrain base.
+          waterLayer.position[a] = currentTerrainBottom - waterMax * sWater;
         } else {
           waterLayer.scale[a] = 1;
           waterLayer.position[a] = 0;
         }
       });
+      // Water bottom in world space = terrain bottom - full water height
+      waterBottomWorld = currentTerrainBottom - waterHeight * sWater;
     }
+
 
     // Hide boolean_cube layer (subtraction volume only)
     object.children.forEach((layer) => {
@@ -487,7 +520,8 @@ function CityAssembly({
       }
     });
 
-    // Apply Revit base frame layer controls — inserted inside currentTerrainBottom
+    // Apply Revit base frame layer controls.
+    // When water is enabled, revit anchors below water bottom; otherwise below terrain bottom.
     const revitLayer = object.getObjectByName("revit") as THREE.Mesh | undefined;
     if (revitLayer) {
       revitLayer.visible = !!controls.enableRevit;
@@ -505,35 +539,42 @@ function CityAssembly({
         object.updateMatrixWorld(true);
 
         const REVIT_OVERLAP = 0.015;
+        // Anchor revit below water if water is enabled, else below terrain
+        const revitAnchorBottom = controls.enableWater
+          ? waterBottomWorld
+          : currentTerrainBottom;
         const rx = center[horizAxes[0]];
-        const ry = currentTerrainBottom + REVIT_OVERLAP - h / 2;
+        const ry = revitAnchorBottom + REVIT_OVERLAP - h / 2;
         const rz = center[horizAxes[1]];
 
-        // Create local-space cloned meshes of boolean_cube for exact 3D geometry raycasting
+        // When water is enabled, boolean_cube masking is skipped — revit fills the full footprint.
+        // When water is off, boolean_cube volumes carve openings into the revit slab as usual.
         const localBoolMeshes: THREE.Mesh[] = [];
-        object.children.forEach((layer) => {
-          if (layer.name.startsWith("boolean_cube")) {
-            layer.traverse((child) => {
-              const mesh = child as THREE.Mesh;
-              if (mesh.isMesh && mesh.geometry) {
-                const localMatrix = new THREE.Matrix4().identity();
-                let curr: THREE.Object3D | null = mesh;
-                while (curr && curr !== object) {
-                  localMatrix.premultiply(curr.matrix);
-                  curr = curr.parent;
+        if (!controls.enableWater) {
+          object.children.forEach((layer) => {
+            if (layer.name.startsWith("boolean_cube")) {
+              layer.traverse((child) => {
+                const mesh = child as THREE.Mesh;
+                if (mesh.isMesh && mesh.geometry) {
+                  const localMatrix = new THREE.Matrix4().identity();
+                  let curr: THREE.Object3D | null = mesh;
+                  while (curr && curr !== object) {
+                    localMatrix.premultiply(curr.matrix);
+                    curr = curr.parent;
+                  }
+                  const cloneGeom = mesh.geometry.clone();
+                  cloneGeom.applyMatrix4(localMatrix);
+                  const localMesh = new THREE.Mesh(
+                    cloneGeom,
+                    new THREE.MeshBasicMaterial({ side: THREE.DoubleSide })
+                  );
+                  localMesh.matrixWorld.identity();
+                  localBoolMeshes.push(localMesh);
                 }
-                const cloneGeom = mesh.geometry.clone();
-                cloneGeom.applyMatrix4(localMatrix);
-                const localMesh = new THREE.Mesh(
-                  cloneGeom,
-                  new THREE.MeshBasicMaterial({ side: THREE.DoubleSide })
-                );
-                localMesh.matrixWorld.identity();
-                localBoolMeshes.push(localMesh);
-              }
-            });
-          }
-        });
+              });
+            }
+          });
+        }
 
         // Set up Raycaster along upAxis
         const raycaster = new THREE.Raycaster();
@@ -573,6 +614,7 @@ function CityAssembly({
             mask[ix][iz] = !isMasked;
           }
         }
+
 
         const visited: boolean[][] = Array.from({ length: GRID_X }, () => Array(GRID_Z).fill(false));
         const mergedGeoms: THREE.BufferGeometry[] = [];
