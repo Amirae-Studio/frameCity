@@ -99,10 +99,11 @@ export const FILAMENT_LINES = [
 export const DEFAULT_LAYER_COLORS: Record<string, string> = {
   trees: "#3F8E43", // Mistletoe Green
   grass: "#3F8E43", // Bambu Green
-  terrain: "#FFFFFF", // Apricot
+  terrain: "#FFFFFF",
   "small-building": "#FFFFFF", // Jade White
   "main-building": "#FFFFFF", // Jade White
   roads: "#000000", // Dark Gray
+  water: "#0086D6", // Cyan / Light Blue
 };
 
 // Live "Manipulate city" values (percentages + layer visibility + colors).
@@ -112,6 +113,8 @@ export type CityControls = {
   terrain: number; // terrain · vertical only
   roads: number; // roads · vertical only
   trees: number; // trees · vertical only
+  water: number; // water · vertical only
+  enableWater: boolean; // default false
   hideRoads: boolean;
   hideTrees: boolean;
   hideGrass: boolean;
@@ -133,6 +136,8 @@ export const CITY_DEFAULTS: CityControls = {
   terrain: 100,
   roads: 100,
   trees: 100,
+  water: 50,
+  enableWater: false,
   hideRoads: false,
   hideTrees: false,
   hideGrass: false,

@@ -255,7 +255,7 @@ function CityAssembly({
     // Which axis is "up"? Flat layers (roads/terrain/grass) are thinnest
     // along it — robust whether the exports are Y-up or Z-up.
     let upAxis: Axis = "y";
-    const flat = ["roads", "terrain", "grass"]
+    const flat = ["roads", "terrain", "grass", "water"]
       .map((n) => object.getObjectByName(n))
       .find(Boolean);
     if (flat) {
@@ -458,6 +458,23 @@ function CityAssembly({
       });
     }
 
+    // Position and scale water layer anchored at the bottom of the terrain
+    const waterLayer = object.getObjectByName("water");
+    const waterInfo = layerInfo.get("water");
+    if (waterLayer && waterInfo) {
+      const sWater = controls.water / 100;
+      AXES.forEach((a) => {
+        if (a === upAxis) {
+          waterLayer.scale[a] = sWater;
+          const waterMin = waterInfo.min[a];
+          waterLayer.position[a] = currentTerrainBottom - waterMin * sWater;
+        } else {
+          waterLayer.scale[a] = 1;
+          waterLayer.position[a] = 0;
+        }
+      });
+    }
+
     // Hide boolean_cube layer (subtraction volume only)
     object.children.forEach((layer) => {
       if (layer.name.startsWith("boolean_cube")) {
@@ -639,6 +656,7 @@ function CityAssembly({
     setVisible("roads", controls.hideRoads);
     setVisible("trees", controls.hideTrees);
     setVisible("grass", controls.hideGrass);
+    setVisible("water", !controls.enableWater);
 
     // Apply layer colors dynamically
     object.children.forEach((layer) => {

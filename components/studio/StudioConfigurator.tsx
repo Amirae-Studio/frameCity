@@ -110,6 +110,7 @@ export function StudioConfigurator({
     if (layerSet.has("small-building")) list.push({ key: "small-building", label: "Small Buildings" });
     if (layerSet.has("main-building")) list.push({ key: "main-building", label: "Main Building" });
     if (layerSet.has("roads")) list.push({ key: "roads", label: "Roads" });
+    if (layerSet.has("water")) list.push({ key: "water", label: "Water" });
     return list;
   }, [layerSet]);
 
@@ -760,6 +761,26 @@ export function StudioConfigurator({
                             onValueChange={(v) => setCtl("trees", v)}
                           />
                         )}
+                        {layerSet.has("water") && (
+                          <div className="flex flex-col gap-3 rounded-xl border border-cream/[0.12] bg-cream/[0.03] p-3">
+                            <SegmentedToggle
+                              label="Water layer"
+                              checked={cityCtl.enableWater}
+                              onCheckedChange={(v) => setCtl("enableWater", v)}
+                            />
+                            {cityCtl.enableWater && (
+                              <Scrubber
+                                label="Water scale"
+                                value={cityCtl.water}
+                                min={50}
+                                max={200}
+                                step={1}
+                                decimals={0}
+                                onValueChange={(v) => setCtl("water", v)}
+                              />
+                            )}
+                          </div>
+                        )}
 
                         <div className="flex flex-col gap-2 pt-2 border-t border-cream/[0.09]">
                           <span className="font-mono text-[10px] font-bold uppercase tracking-[0.16em] text-cream/45">
@@ -984,6 +1005,13 @@ export function StudioConfigurator({
                             title="ROADS COLOUR"
                             value={cityCtl.layerColors.roads || DEFAULT_LAYER_COLORS.roads}
                             onChange={(hex) => setLayerColor("roads", hex)}
+                          />
+                        )}
+                        {activeColorTab === "water" && layerSet.has("water") && (
+                          <FilamentColorCard
+                            title="WATER COLOUR"
+                            value={cityCtl.layerColors.water || DEFAULT_LAYER_COLORS.water}
+                            onChange={(hex) => setLayerColor("water", hex)}
                           />
                         )}
                       </div>

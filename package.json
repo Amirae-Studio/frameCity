@@ -23,6 +23,7 @@
     "ogl": "^1.0.11",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "resend": "^6.28.0",
     "tailwind-merge": "^3.6.0",
     "three": "^0.185.1",
     "three-bvh-csg": "^0.0.18"
