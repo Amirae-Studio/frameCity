@@ -234,8 +234,8 @@ export function Support() {
                     />
                   </div>
                   <div className="mt-2 text-sm font-bold text-cream">
-                    <motion.span ref={daysUp.inViewRef}>{daysUp.rounded}</motion.span>{" "}
-                    <span className="font-normal text-cream/60">days to go</span>
+                    <motion.span ref={daysUp.inViewRef}>Late Pledge Active</motion.span>{" "}
+                   
                   </div>
                 </div>
               </div>

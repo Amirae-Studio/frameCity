@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
 import { createClient } from "@/lib/supabase/client";
+import { sendEmailAction } from "@/app/actions/sendemail";
 
 type Status = "idle" | "google" | "sending" | "sent" | "error";
 
@@ -22,6 +23,7 @@ export function LoginForm({
   const callback = () =>
     `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`;
 
+  // 1. Google OAuth (Direct Supabase - Free & No Limit)
   async function signInWithGoogle() {
     setStatus("google");
     const supabase = createClient();
@@ -33,26 +35,24 @@ export function LoginForm({
       setStatus("error");
       setMessage(error.message);
     }
-    // On success the browser navigates away to Google.
   }
 
+  // 2. Email Magic Link (Bypasses Supabase SMTP limits using Resend API)
   async function sendMagicLink(e: React.FormEvent) {
     e.preventDefault();
     if (!email.trim()) return;
     setStatus("sending");
-    const supabase = createClient();
-    const { error } = await supabase.auth.signInWithOtp({
-      email: email.trim(),
-      options: { emailRedirectTo: callback() },
-    });
-    if (error) {
+
+    // Resend action vazhiya email send panrom
+    const result = await sendEmailAction(email.trim(), callback());
+
+    if (!result.success) {
       setStatus("error");
-      setMessage(error.message);
+      setMessage(result.error || "Failed to send email");
     } else {
       setStatus("sent");
     }
   }
-
   if (status === "sent") {
     return (
       <motion.div

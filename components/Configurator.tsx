@@ -18,8 +18,8 @@ export function Configurator() {
   const contactLinks = [
     {
       name: "Email Support",
-      value: "framecities@gmail.com",
-      href: "mailto:framecities@gmail.com",
+      value: "contact@amirae.studio",
+      href: "mailto:contact@amirae.studio",
       icon: (
         <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24">
           <path d="M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z" />
@@ -81,7 +81,7 @@ export function Configurator() {
                 Can&apos;t find your city in the collection?
               </h2>
               <p className="text-sm text-cream/70 leading-relaxed mt-3 mb-0">
-                We hand-model custom 1:1000 scale city districts on demand. Fill out the form below to submit your request directly to <strong className="text-cream">framecities@gmail.com</strong>.
+                We hand-model custom 1:1000 scale city districts on demand. Fill out the form below to submit your request directly to <strong className="text-cream">contact@amirae.studio</strong>.
               </p>
             </div>
 
@@ -126,7 +126,7 @@ export function Configurator() {
                   animate={{ opacity: 1, y: 0 }}
                   className="text-xs font-mono text-emerald-400 font-bold text-center mt-2"
                 >
-                  ✓ Opening mail client to send request to framecities@gmail.com!
+                  ✓ Opening mail client to send request to contact@amirae.studio!
                 </motion.p>
               )}
             </form>
