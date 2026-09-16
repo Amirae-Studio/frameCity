@@ -235,8 +235,12 @@ export function collectTransformedMeshes(root: THREE.Object3D): MeshEntry[] {
 
   const rawItems: RawItem[] = [];
 
-  root.traverse((obj) => {
-    if (!obj.visible) return;
+  // NB: Object3D.traverse() does not prune — returning from its callback skips
+  // that node but still descends into its children. The "Hide layers" toggles
+  // clear `visible` on the layer Group while its child meshes stay visible, so a
+  // traverse() would happily export hidden roads/trees/grass. Walk manually and
+  // drop the whole subtree instead, matching what the renderer shows.
+  const collectMesh = (obj: THREE.Object3D) => {
     const mesh = obj as THREE.Mesh;
     if (!mesh.isMesh || !mesh.geometry) return;
 
@@ -280,7 +284,15 @@ export function collectTransformedMeshes(root: THREE.Object3D): MeshEntry[] {
       name,
       isFlipped,
     });
-  });
+  };
+
+  const collect = (obj: THREE.Object3D) => {
+    if (!obj.visible) return;
+    collectMesh(obj);
+    obj.children.forEach(collect);
+  };
+
+  collect(root);
 
   if (rawItems.length === 0) return [];
 

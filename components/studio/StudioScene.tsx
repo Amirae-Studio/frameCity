@@ -359,17 +359,9 @@ function CityAssembly({
     const baseHeight = totalH * 0.4;
     const currentTerrainBottom = terrainBottomAtRest - (sTerrain - 1) * baseHeight;
 
-    // When water is enabled, revit anchors below water bottom
-    let effectiveBottom = currentTerrainBottom;
-    if (controls.enableWater) {
-      const waterInfo = layerInfo.get("water");
-      if (waterInfo) {
-        const sWater = controls.water / 100;
-        const waterHeight = waterInfo.max[upAxis] - waterInfo.min[upAxis];
-        // Terrain also extends down by waterHeight*sWater, so effective bottom goes lower
-        effectiveBottom = currentTerrainBottom - waterHeight * sWater;
-      }
-    }
+    // Water scales upward from its own bottom and never reaches below the
+    // terrain, so it has no say in where the tile's base sits.
+    const effectiveBottom = currentTerrainBottom;
 
     const REVIT_OVERLAP = 0.015;
     const h = baseDimensions.height * (controls.revitHeight / 100);
@@ -384,8 +376,6 @@ function CityAssembly({
     controls.enableRevit,
     controls.revitHeight,
     controls.terrain,
-    controls.enableWater,
-    controls.water,
     terrainBottomAtRest,
     baseDimensions,
     boxMin,
@@ -421,10 +411,14 @@ function CityAssembly({
     };
 
     apply("small-building", controls.small / 100, 1);
-    apply("main-building", 1, controls.large / 100);
+    // Uniform scale first, then extra height on top of it — so a locked-in
+    // uniform size can still be stretched vertically.
+    apply("main-building", controls.largeHeight / 100, controls.large / 100);
     apply("roads", controls.roads / 100, 1);
     apply("trees", controls.trees / 100, 1);
     apply("grass", 1, 1);
+    // Bottom-anchored like the rest — the slider moves only the water's top face.
+    apply("water", controls.water / 100, 1);
 
     // Deform terrain base block from bottom up — top surface topography (t=1) stays fixed (0 delta).
     const terrainLayer = object.getObjectByName("terrain");
@@ -437,15 +431,6 @@ function CityAssembly({
       const topThreshold = minY + 0.35 * totalH;
       const baseHeight = topThreshold - minY;
       currentTerrainBottom = minY - (sTerrain - 1) * baseHeight;
-
-      // When water is enabled, terrain must extend its bottom vertices further down
-      // to wrap around (contain) the water body visually.
-      const waterInfoLocal = layerInfo.get("water");
-      const waterExtra =
-        controls.enableWater && waterInfoLocal
-          ? (waterInfoLocal.max[upAxis] - waterInfoLocal.min[upAxis]) *
-            (controls.water / 100)
-          : 0;
 
       terrainLayer.position.set(0, 0, 0);
       terrainLayer.scale.set(1, 1, 1);
@@ -468,9 +453,9 @@ function CityAssembly({
 
             const yLocal = v[upAxis];
             const t = THREE.MathUtils.clamp((yLocal - minY) / (topThreshold - minY), 0, 1);
-            // Bottom vertices (t=0) get full terrain extension + water depth extension.
+            // Bottom vertices (t=0) get the full terrain extension.
             // Top vertices (t=1) stay fixed — no delta.
-            const delta = (1 - t) * ((sTerrain - 1) * baseHeight + waterExtra);
+            const delta = (1 - t) * (sTerrain - 1) * baseHeight;
             v[upAxis] = yLocal - delta;
 
             v.applyMatrix4(invMat);
@@ -485,28 +470,6 @@ function CityAssembly({
     }
 
 
-    // Position and scale water layer anchored at the bottom of the terrain
-    const waterLayer = object.getObjectByName("water");
-    const waterInfo = layerInfo.get("water");
-    let waterBottomWorld = currentTerrainBottom;
-    if (waterLayer && waterInfo) {
-      const sWater = controls.water / 100;
-      const waterMax = waterInfo.max[upAxis];
-      const waterHeight = waterInfo.max[upAxis] - waterInfo.min[upAxis];
-      AXES.forEach((a) => {
-        if (a === upAxis) {
-          waterLayer.scale[a] = sWater;
-          // Anchor water TOP at terrain bottom — water hangs downward from terrain base.
-          waterLayer.position[a] = currentTerrainBottom - waterMax * sWater;
-        } else {
-          waterLayer.scale[a] = 1;
-          waterLayer.position[a] = 0;
-        }
-      });
-      // Water bottom in world space = terrain bottom - full water height
-      waterBottomWorld = currentTerrainBottom - waterHeight * sWater;
-    }
-
 
     // Hide boolean_cube layer (subtraction volume only)
     object.children.forEach((layer) => {
@@ -520,8 +483,7 @@ function CityAssembly({
       }
     });
 
-    // Apply Revit base frame layer controls.
-    // When water is enabled, revit anchors below water bottom; otherwise below terrain bottom.
+    // Apply Revit base frame layer controls — inserted below currentTerrainBottom.
     const revitLayer = object.getObjectByName("revit") as THREE.Mesh | undefined;
     if (revitLayer) {
       revitLayer.visible = !!controls.enableRevit;
@@ -539,12 +501,8 @@ function CityAssembly({
         object.updateMatrixWorld(true);
 
         const REVIT_OVERLAP = 0.015;
-        // Anchor revit below water if water is enabled, else below terrain
-        const revitAnchorBottom = controls.enableWater
-          ? waterBottomWorld
-          : currentTerrainBottom;
         const rx = center[horizAxes[0]];
-        const ry = revitAnchorBottom + REVIT_OVERLAP - h / 2;
+        const ry = currentTerrainBottom + REVIT_OVERLAP - h / 2;
         const rz = center[horizAxes[1]];
 
         // When water is enabled, boolean_cube masking is skipped — revit fills the full footprint.
@@ -850,9 +808,8 @@ function StudioCameraControls() {
         }
       }
 
-      if (!P) {
-        P = controls.target.clone();
-      }
+      // controlsRef `any` so clone() any-ah varum — explicit type podrom
+      const focus: THREE.Vector3 = P ?? controls.target.clone();
 
       const zoomIntensity = 0.0015;
       let factor = Math.exp(e.deltaY * zoomIntensity);
@@ -872,15 +829,15 @@ function StudioCameraControls() {
       if (Math.abs(factor - 1) < 1e-4) return;
 
       camera.position.set(
-        P.x + (camera.position.x - P.x) * factor,
-        P.y + (camera.position.y - P.y) * factor,
-        P.z + (camera.position.z - P.z) * factor
+        focus.x + (camera.position.x - focus.x) * factor,
+        focus.y + (camera.position.y - focus.y) * factor,
+        focus.z + (camera.position.z - focus.z) * factor
       );
 
       controls.target.set(
-        P.x + (controls.target.x - P.x) * factor,
-        P.y + (controls.target.y - P.y) * factor,
-        P.z + (controls.target.z - P.z) * factor
+        focus.x + (controls.target.x - focus.x) * factor,
+        focus.y + (controls.target.y - focus.y) * factor,
+        focus.z + (controls.target.z - focus.z) * factor
       );
 
       controls.update();

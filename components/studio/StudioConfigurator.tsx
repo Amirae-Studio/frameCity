@@ -40,6 +40,7 @@ const StudioScene = dynamic(() => import("./StudioScene"), {
   ),
 });
 
+type ExportFormat = "3mf" | "stl";
 type Triple = [number, number, number];
 type Transform = { pos: Triple; rot: Triple; scl: Triple };
 
@@ -70,7 +71,7 @@ export function StudioConfigurator({
   const [tf, setTf] = useState<Transform>(INITIAL_TF);
 
   // Download quota & export states
-  const [isExporting, setIsExporting] = useState(false);
+  const [exportingAs, setExportingAs] = useState<ExportFormat | null>(null);
   const [downloadNotice, setDownloadNotice] = useState<string | null>(null);
   const [downloadLimitModal, setDownloadLimitModal] = useState(false);
   const [tempAccessModalOpen, setTempAccessModalOpen] = useState(false);
@@ -84,6 +85,9 @@ export function StudioConfigurator({
   const [cityCtl, setCityCtl] = useState<CityControls>(CITY_DEFAULTS);
   const setCtl = <K extends keyof CityControls>(k: K, v: CityControls[K]) =>
     setCityCtl((c) => ({ ...c, [k]: v }));
+
+  const resetCtl = (k: keyof CityControls) => setCtl(k, CITY_DEFAULTS[k]);
+  const atDefault = (k: keyof CityControls) => cityCtl[k] === CITY_DEFAULTS[k];
 
   const setLayerColor = useCallback((layerName: string, hex: string) => {
     setCityCtl((c) => ({
@@ -173,16 +177,19 @@ export function StudioConfigurator({
     syncFromMesh(mesh);
   }
 
-  async function downloadStl() {
+  // Either format is available at any point. Colours are a property of the
+  // model, not a precondition for 3MF — with them off it just exports in one
+  // colour.
+  async function downloadModel(format: ExportFormat) {
     const mesh = meshRef.current;
     if (!mesh) return;
 
-    setIsExporting(true);
+    setExportingAs(format);
     setDownloadNotice(null);
 
     const res = await recordDownload(city.slug, location.slug);
     if (!res.ok) {
-      setIsExporting(false);
+      setExportingAs(null);
       if (res.isTempAccess) {
         setTempAccessModalOpen(true);
       } else if (res.error === "limit_reached" || res.remaining === 0) {
@@ -193,10 +200,8 @@ export function StudioConfigurator({
       return;
     }
 
-    const useColors = cityCtl.enableColors;
-
     try {
-      if (useColors) {
+      if (format === "3mf") {
         const blob = exportTo3MF(mesh);
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
@@ -205,12 +210,15 @@ export function StudioConfigurator({
         a.click();
         URL.revokeObjectURL(url);
 
+        const colorNote = cityCtl.enableColors
+          ? " — colors included."
+          : " — single color. Turn on Filament Colors for a multi-color file.";
         if (res.tier === "explorer" && res.remaining !== undefined) {
           setDownloadNotice(
-            `Download recorded! ${res.remaining} downloads remaining this month. (3MF with colors)`
+            `Download recorded! ${res.remaining} downloads remaining this month. (3MF)`
           );
         } else {
-          setDownloadNotice("Download recorded! 3MF file ready — colors included.");
+          setDownloadNotice(`Download recorded! 3MF file ready${colorNote}`);
         }
       } else {
         const { STLExporter } = await import(
@@ -249,9 +257,9 @@ export function StudioConfigurator({
       }
     } catch (err) {
       console.error("Export error:", err);
-      alert(`Failed to generate ${useColors ? "3MF" : "STL"} file.`);
+      alert(`Failed to generate ${format.toUpperCase()} file.`);
     } finally {
-      setIsExporting(false);
+      setExportingAs(null);
     }
   }
 
@@ -473,27 +481,39 @@ export function StudioConfigurator({
             </a>
           )}
           <ThemeToggle />
-          <button
-            onClick={downloadStl}
-            disabled={isExporting}
-            className="group flex items-center gap-2 rounded-full bg-cream px-5 py-[10px] text-[13px] text-[var(--color-base)] transition-transform duration-300 hover:scale-[1.03] disabled:opacity-50"
-            title={cityCtl.enableColors ? "Download as 3MF (with colors)" : "Download as STL"}
-          >
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden>
-              <path
-                d="M12 3v12m0 0 4.5-4.5M12 15l-4.5-4.5M4 19h16"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
-            {isExporting
-              ? "Exporting…"
-              : cityCtl.enableColors
-              ? "Download 3MF"
-              : "Download"}
-          </button>
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={() => downloadModel("3mf")}
+              disabled={exportingAs !== null}
+              className="group flex items-center gap-2 rounded-full bg-cream px-5 py-[10px] text-[13px] text-[var(--color-base)] transition-transform duration-300 hover:scale-[1.03] disabled:opacity-50"
+              title="Download as 3MF — keeps layers separate for multi-color printing"
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden>
+                <path
+                  d="M12 3v12m0 0 4.5-4.5M12 15l-4.5-4.5M4 19h16"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+              {exportingAs === "3mf" ? (
+                "Exporting…"
+              ) : (
+                <>
+                  <span className="hidden sm:inline">Download </span>3MF
+                </>
+              )}
+            </button>
+            <button
+              onClick={() => downloadModel("stl")}
+              disabled={exportingAs !== null}
+              className="rounded-full border border-cream/25 px-3.5 py-[9px] font-mono text-[11px] font-bold uppercase tracking-[0.12em] text-cream/70 transition-colors duration-200 hover:border-cream/45 hover:text-cream disabled:opacity-50"
+              title="Download as STL — a single merged mesh"
+            >
+              {exportingAs === "stl" ? "…" : "STL"}
+            </button>
+          </div>
         </div>
       </header>
 
@@ -706,59 +726,74 @@ export function StudioConfigurator({
                       </p>
                     ) : (
                       <>
+                      {layerSet.has("main-building") && (
+                          <div className="flex flex-col gap-3 rounded-xl border border-cream/[0.12] bg-cream/[0.03] p-3">
+                            <span className="font-mono text-[10px] font-bold uppercase tracking-[0.16em] text-cream/45">
+                              Large buildings
+                            </span>
+                            <ResettableScrubber
+                              label="Size"
+                              value={cityCtl.large}
+                              min={50}
+                              max={150}
+                              onValueChange={(v) => setCtl("large", v)}
+                              onReset={() => resetCtl("large")}
+                              atDefault={atDefault("large")}
+                            />
+                            <ResettableScrubber
+                              label="Height"
+                              value={cityCtl.largeHeight}
+                              min={50}
+                              max={200}
+                              onValueChange={(v) => setCtl("largeHeight", v)}
+                              onReset={() => resetCtl("largeHeight")}
+                              atDefault={atDefault("largeHeight")}
+                            />
+                          </div>
+                        )}
                         {layerSet.has("small-building") && (
-                          <Scrubber
+                          <ResettableScrubber
                             label="Small buildings"
                             value={cityCtl.small}
                             min={50}
                             max={150}
-                            step={1}
-                            decimals={0}
                             onValueChange={(v) => setCtl("small", v)}
+                            onReset={() => resetCtl("small")}
+                            atDefault={atDefault("small")}
                           />
                         )}
-                        {layerSet.has("main-building") && (
-                          <Scrubber
-                            label="Large buildings"
-                            value={cityCtl.large}
-                            min={50}
-                            max={150}
-                            step={1}
-                            decimals={0}
-                            onValueChange={(v) => setCtl("large", v)}
-                          />
-                        )}
+                        
                         {layerSet.has("terrain") && (
-                          <Scrubber
+                          <ResettableScrubber
                             label="Terrain height"
                             value={cityCtl.terrain}
                             min={20}
                             max={500}
-                            step={1}
-                            decimals={0}
                             onValueChange={(v) => setCtl("terrain", v)}
+                            onReset={() => resetCtl("terrain")}
+                            atDefault={atDefault("terrain")}
                           />
                         )}
                         {layerSet.has("roads") && (
-                          <Scrubber
+                          <ResettableScrubber
                             label="Road scale"
                             value={cityCtl.roads}
                             min={50}
                             max={200}
-                            step={1}
-                            decimals={0}
                             onValueChange={(v) => setCtl("roads", v)}
+                            onReset={() => resetCtl("roads")}
+                            atDefault={atDefault("roads")}
                           />
                         )}
                         {layerSet.has("trees") && (
-                          <Scrubber
+                          <ResettableScrubber
                             label="Tree scale"
                             value={cityCtl.trees}
                             min={50}
                             max={150}
-                            step={1}
-                            decimals={0}
                             onValueChange={(v) => setCtl("trees", v)}
+                            onReset={() => resetCtl("trees")}
+                            atDefault={atDefault("trees")}
                           />
                         )}
                         {layerSet.has("water") && (
@@ -769,14 +804,14 @@ export function StudioConfigurator({
                               onCheckedChange={(v) => setCtl("enableWater", v)}
                             />
                             {cityCtl.enableWater && (
-                              <Scrubber
+                              <ResettableScrubber
                                 label="Water scale"
                                 value={cityCtl.water}
                                 min={50}
                                 max={200}
-                                step={1}
-                                decimals={0}
                                 onValueChange={(v) => setCtl("water", v)}
+                                onReset={() => resetCtl("water")}
+                                atDefault={atDefault("water")}
                               />
                             )}
                           </div>
@@ -1154,6 +1189,51 @@ function SectionLabel({
         {no}
       </span>
       <span className="font-display text-[17px] font-medium">{label}</span>
+    </div>
+  );
+}
+
+/** A Manipulate City slider with the same reset affordance the Transform tab uses. */
+function ResettableScrubber({
+  label,
+  value,
+  min,
+  max,
+  onValueChange,
+  onReset,
+  atDefault,
+}: {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  onValueChange: (v: number) => void;
+  onReset: () => void;
+  atDefault: boolean;
+}) {
+  return (
+    <div className="flex items-center gap-1.5">
+      <div className="min-w-0 flex-1">
+        <Scrubber
+          label={label}
+          value={value}
+          min={min}
+          max={max}
+          step={1}
+          decimals={0}
+          onValueChange={onValueChange}
+        />
+      </div>
+      <button
+        type="button"
+        onClick={onReset}
+        disabled={atDefault}
+        title={`Reset ${label.toLowerCase()}`}
+        aria-label={`Reset ${label.toLowerCase()}`}
+        className="shrink-0 rounded-md px-1 text-[13px] leading-none text-cream/40 outline-offset-2 transition-colors hover:text-cream disabled:pointer-events-none disabled:opacity-25"
+      >
+        ↺
+      </button>
     </div>
   );
 }

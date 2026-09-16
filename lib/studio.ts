@@ -109,7 +109,8 @@ export const DEFAULT_LAYER_COLORS: Record<string, string> = {
 // Live "Manipulate city" values (percentages + layer visibility + colors).
 export type CityControls = {
   small: number; // small-building · vertical only
-  large: number; // main-building · all axes
+  large: number; // main-building · all axes (uniform)
+  largeHeight: number; // main-building · extra height on top of the uniform scale
   terrain: number; // terrain · vertical only
   roads: number; // roads · vertical only
   trees: number; // trees · vertical only
@@ -133,6 +134,7 @@ export type CityControls = {
 export const CITY_DEFAULTS: CityControls = {
   small: 100,
   large: 100,
+  largeHeight: 100,
   terrain: 100,
   roads: 100,
   trees: 100,
