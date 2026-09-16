@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
-import { Canvas, useLoader, useThree } from "@react-three/fiber";
+import { Canvas, useLoader } from "@react-three/fiber";
 import {
   OrbitControls,
   TransformControls,
@@ -759,102 +759,10 @@ function Loader() {
 }
 
 function StudioCameraControls() {
-  const { camera, gl, scene, raycaster } = useThree();
-  const controlsRef = useRef<any>(null);
-
-  useEffect(() => {
-    const domElement = gl.domElement;
-
-    const handleWheel = (e: WheelEvent) => {
-      e.preventDefault();
-      const controls = controlsRef.current;
-      if (!controls) return;
-
-      const rect = domElement.getBoundingClientRect();
-      const mouseX = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-      const mouseY = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-
-      const mouse = new THREE.Vector2(mouseX, mouseY);
-      raycaster.setFromCamera(mouse, camera);
-
-      // Find intersection point under cursor
-      let P: THREE.Vector3 | null = null;
-      const intersects = raycaster.intersectObjects(scene.children, true);
-      const validHit = intersects.find((hit) => {
-        let obj: THREE.Object3D | null = hit.object;
-        while (obj) {
-          if (
-            obj.name === "TransformControls" ||
-            obj.type === "TransformControlsPlane" ||
-            (obj as any).isTransformControls
-          ) {
-            return false;
-          }
-          obj = obj.parent;
-        }
-        return hit.object.visible;
-      });
-
-      if (validHit) {
-        P = validHit.point;
-      } else {
-        const target = controls.target;
-        const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -target.y);
-        const planePoint = new THREE.Vector3();
-        if (raycaster.ray.intersectPlane(plane, planePoint)) {
-          if (raycaster.ray.direction.dot(planePoint.clone().sub(camera.position)) > 0) {
-            P = planePoint;
-          }
-        }
-      }
-
-      // controlsRef `any` so clone() any-ah varum — explicit type podrom
-      const focus: THREE.Vector3 = P ?? controls.target.clone();
-
-      const zoomIntensity = 0.0015;
-      let factor = Math.exp(e.deltaY * zoomIntensity);
-      factor = THREE.MathUtils.clamp(factor, 0.75, 1.35);
-
-      const currentDist = camera.position.distanceTo(controls.target);
-      const newDist = currentDist * factor;
-      const minDistance = 2.0;
-      const maxDistance = 32.0;
-
-      if (newDist < minDistance) {
-        factor = minDistance / currentDist;
-      } else if (newDist > maxDistance) {
-        factor = maxDistance / currentDist;
-      }
-
-      if (Math.abs(factor - 1) < 1e-4) return;
-
-      camera.position.set(
-        focus.x + (camera.position.x - focus.x) * factor,
-        focus.y + (camera.position.y - focus.y) * factor,
-        focus.z + (camera.position.z - focus.z) * factor
-      );
-
-      controls.target.set(
-        focus.x + (controls.target.x - focus.x) * factor,
-        focus.y + (controls.target.y - focus.y) * factor,
-        focus.z + (controls.target.z - focus.z) * factor
-      );
-
-      controls.update();
-    };
-
-    domElement.addEventListener("wheel", handleWheel, { passive: false });
-    return () => {
-      domElement.removeEventListener("wheel", handleWheel);
-    };
-  }, [camera, gl, scene, raycaster]);
-
   return (
     <OrbitControls
-      ref={controlsRef}
       makeDefault
       target={[0, 0.8, 0]}
-      enableZoom={false}
       enableDamping
       dampingFactor={0.08}
       minDistance={2.0}
