@@ -44,15 +44,18 @@ export async function getModelFiles(
   const r2Bucket = resolveR2Bucket(bucketName);
   console.log(`[R2] listR2Objects bucket="${r2Bucket}" prefix="${prefix}"`);
 
+  // Trailing slash so "paris/tour-eiffel" doesn't also match "paris/tour-eiffel-2/…"
+  const folder = prefix.replace(/\/+$/, "");
+
   let objects: { key: string; size: number }[] = [];
   try {
-    objects = await listR2Objects(r2Bucket, prefix);
-    
+    objects = await listR2Objects(r2Bucket, `${folder}/`);
+
     // Fallback: If 0 objects found, try with double-prefix (e.g. city/city/location) or single-prefix
-    if (objects.length === 0 && prefix.includes("/")) {
-      const parts = prefix.split("/");
+    if (objects.length === 0 && folder.includes("/")) {
+      const parts = folder.split("/");
       if (parts.length === 2 && parts[0] !== parts[1]) {
-        const doublePrefix = `${parts[0]}/${parts[0]}/${parts[1]}`;
+        const doublePrefix = `${parts[0]}/${parts[0]}/${parts[1]}/`;
         console.log(`[R2] Retrying with double prefix "${doublePrefix}"`);
         objects = await listR2Objects(r2Bucket, doublePrefix);
       }
