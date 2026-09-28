@@ -134,8 +134,13 @@ export function StudioConfigurator({
     setModelLoading(true);
     setModelFiles([]);
     setCityCtl(CITY_DEFAULTS);
+
     const bucket = type === "building" ? "buildings" : "city-models";
-    getModelFiles(`${city.slug}/${location.slug}`, bucket)
+
+    // Prefix format for R2 bucket queries (e.g. paris/tour-eiffel)
+    const prefix = `${city.slug}/${location.slug}`;
+
+    getModelFiles(prefix, bucket)
       .then((files) => {
         if (cancelled) return;
         setModelFiles(files);
@@ -148,6 +153,7 @@ export function StudioConfigurator({
       cancelled = true;
     };
   }, [city.slug, location.slug, type]);
+
 
   const syncFromMesh = useCallback((mesh: THREE.Object3D) => {
     setTf({

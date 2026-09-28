@@ -167,8 +167,8 @@ export function Hero() {
               <source
                 src={
                   isLight
-                    ? "https://joewkzjnrikotpgzyywh.supabase.co/storage/v1/object/public/gallery/videos/hero-animation-white.webm"
-                    : "https://joewkzjnrikotpgzyywh.supabase.co/storage/v1/object/public/gallery/videos/hero-animation.webm"
+                    ? "https://pub-171cdfeae0274fd28337587457de5083.r2.dev/videos/hero-animation-white.webm"
+                    : "https://pub-171cdfeae0274fd28337587457de5083.r2.dev/videos/hero-animation.webm"
                 }
                 type="video/webm"
               />

@@ -1,69 +1,32 @@
 import { Nav } from "@/components/Nav";
 import { Footer } from "@/components/Footer";
 import { createClient } from "@/lib/supabase/server";
-import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { toNavUser } from "@/lib/user";
 import { GalleryView, GalleryImage } from "@/components/GalleryView";
-
-function getAdminSupabase() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  const serviceKey =
-    process.env.SUPABASE_SERVICE_ROLE_KEY ||
-    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!;
-  return createSupabaseClient(url, serviceKey, {
-    auth: { persistSession: false },
-  });
-}
+import { listR2Objects, getR2PublicUrl, R2_BUCKET } from "@/lib/r2";
 
 const IMAGE_EXTENSIONS = /\.(jpg|jpeg|png|webp|gif|avif|svg|bmp|tiff|heic)$/i;
 
-async function fetchGalleryImagesFromBucket(): Promise<GalleryImage[]> {
-  const supabaseAdmin = getAdminSupabase();
-  const images: GalleryImage[] = [];
+async function fetchGalleryImagesFromR2(): Promise<GalleryImage[]> {
+  const objects = await listR2Objects(R2_BUCKET.gallery);
 
-  async function listFolder(folderPath: string = "") {
-    const { data: files, error } = await supabaseAdmin.storage
-      .from("gallery")
-      .list(folderPath, {
-        limit: 100,
-        sortBy: { column: "name", order: "asc" },
-      });
-
-    if (error) {
-      console.error(`Error listing folder "${folderPath}" in gallery bucket:`, error);
-      return;
-    }
-
-    if (!files) return;
-
-    for (const file of files) {
-      if (!file.name || file.name.startsWith(".")) continue;
-
-      const fullPath = folderPath ? `${folderPath}/${file.name}` : file.name;
-
-      // Check if it's a subfolder or file
-      if (!file.id && (!file.metadata || Object.keys(file.metadata).length === 0)) {
-        await listFolder(fullPath);
-      } else {
-        // Only include image files, exclude videos and other  types
-        if (!IMAGE_EXTENSIONS.test(file.name)) continue;
-
-        const { data } = supabaseAdmin.storage
-          .from("gallery")
-          .getPublicUrl(fullPath);
-
-        images.push({
-          name: file.name,
-          url: data.publicUrl,
-          created_at: file.created_at,
-        });
-      }
-    }
-  }
-
-  await listFolder("");
-  return images;
+  return objects
+    .filter(
+      (obj) =>
+        IMAGE_EXTENSIONS.test(obj.key) &&
+        !obj.key.startsWith(".") &&
+        !obj.key.startsWith("amiraeimages/") &&
+        !obj.key.startsWith("brand/") &&
+        !obj.key.startsWith("videos/") &&
+        !obj.key.includes("/") // Only root gallery images
+    )
+    .map((obj) => ({
+      name: obj.key.split("/").pop() ?? obj.key,
+      url: getR2PublicUrl(obj.key),
+      created_at: undefined,
+    }));
 }
+
 
 export default async function GalleryPage() {
   const supabase = await createClient();
@@ -71,7 +34,7 @@ export default async function GalleryPage() {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const images = await fetchGalleryImagesFromBucket();
+  const images = await fetchGalleryImagesFromR2();
 
   return (
     <div className="relative mx-auto flex min-h-screen max-w-[1440px] flex-col justify-between">

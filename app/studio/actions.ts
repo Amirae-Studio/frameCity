@@ -2,12 +2,23 @@
 
 import { createClient } from "@/lib/supabase/server";
 import type { StudioCity, StudioBuilding } from "@/lib/studio";
+import { listR2Objects, getR2PublicUrl, R2_BUCKET } from "@/lib/r2";
 
 export type ModelFile = { name: string; url: string; ext?: string };
+
+/** Map Supabase bucket name → R2 bucket name */
+function resolveR2Bucket(bucketName: string): string {
+  if (bucketName === "buildings") return R2_BUCKET.buildings;
+  return R2_BUCKET.cityModels; // default: city-models
+}
+
+const MODEL_EXTENSIONS = /\.(glb|stl)$/i;
 
 /**
  * List every GLB or STL model file in a location folder and mint short-lived signed URLs.
  * Defaults to bucket 'city-models', but supports 'buildings' bucket for standalone buildings.
+ *
+ * Now served from Cloudflare R2 instead of Supabase Storage.
  */
 export async function getModelFiles(
   prefix: string,
@@ -15,8 +26,8 @@ export async function getModelFiles(
 ): Promise<ModelFile[]> {
   if (!prefix) return [];
 
+  // Auth check — still via Supabase
   const supabase = await createClient();
-
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -29,36 +40,48 @@ export async function getModelFiles(
     .single();
   if (!profile?.has_access) return [];
 
-  const { data: files, error: listError } = await supabase.storage
-    .from(bucketName)
-    .list(prefix, { limit: 100 });
-  if (listError || !files?.length) return [];
+  // Fetch file list from R2
+  const r2Bucket = resolveR2Bucket(bucketName);
+  console.log(`[R2] listR2Objects bucket="${r2Bucket}" prefix="${prefix}"`);
 
-  const validFiles = files.filter((f) => {
-    const lower = f.name.toLowerCase();
-    return lower.endsWith(".glb") || lower.endsWith(".stl");
-  });
-  if (!validFiles.length) return [];
-
-  const { data: signed, error: signError } = await supabase.storage
-    .from(bucketName)
-    .createSignedUrls(
-      validFiles.map((f) => `${prefix}/${f.name}`),
-      300
-    );
-  if (signError || !signed) return [];
-
-  const out: ModelFile[] = [];
-  signed.forEach((s, i) => {
-    if (s.signedUrl) {
-      const isStl = validFiles[i].name.toLowerCase().endsWith(".stl");
-      out.push({
-        name: validFiles[i].name.replace(/\.(glb|stl)$/i, ""),
-        url: s.signedUrl,
-        ext: isStl ? "stl" : "glb",
-      });
+  let objects: { key: string; size: number }[] = [];
+  try {
+    objects = await listR2Objects(r2Bucket, prefix);
+    
+    // Fallback: If 0 objects found, try with double-prefix (e.g. city/city/location) or single-prefix
+    if (objects.length === 0 && prefix.includes("/")) {
+      const parts = prefix.split("/");
+      if (parts.length === 2 && parts[0] !== parts[1]) {
+        const doublePrefix = `${parts[0]}/${parts[0]}/${parts[1]}`;
+        console.log(`[R2] Retrying with double prefix "${doublePrefix}"`);
+        objects = await listR2Objects(r2Bucket, doublePrefix);
+      }
     }
+    console.log(`[R2] found ${objects.length} objects for "${prefix}"`);
+  } catch (err) {
+    console.error(`[R2] listR2Objects FAILED for bucket="${r2Bucket}" prefix="${prefix}":`, err);
+    return [];
+  }
+
+  const validObjects = objects.filter((o) => MODEL_EXTENSIONS.test(o.key));
+  if (!validObjects.length) {
+    console.warn(`[R2] No GLB/STL files found under "${r2Bucket}/${prefix}"`);
+    return [];
+  }
+
+  // Use /api/r2 stream endpoint so Three.js STLLoader/GLTFLoader bypasses CORS issues
+  const out: ModelFile[] = validObjects.map((obj) => {
+    const isStl = obj.key.toLowerCase().endsWith(".stl");
+    const streamUrl = `/api/r2/${r2Bucket}/${obj.key}`;
+    const filename = obj.key.split("/").pop() ?? obj.key;
+    return {
+      name: filename.replace(/\.(glb|stl)$/i, ""),
+      url: streamUrl,
+      ext: isStl ? "stl" : "glb",
+    };
   });
+
+  console.log(`[R2] returning ${out.length} model files`);
   return out;
 }
 
