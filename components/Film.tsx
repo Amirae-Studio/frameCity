@@ -61,8 +61,8 @@ export function Film() {
           playsInline
           controls={isPlaying}
           onEnded={handleClose}
-          poster="/london-table.jpg"
-          src="/Framecity_video.mp4"
+          poster="https://pub-171cdfeae0274fd28337587457de5083.r2.dev/amiraeimages/london-table.jpg"
+          src="https://pub-171cdfeae0274fd28337587457de5083.r2.dev/videos/Homepage-Video.mp4"
           className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-300 ${
             isPlaying ? "opacity-100 z-10" : "opacity-50 z-0"
           }`}

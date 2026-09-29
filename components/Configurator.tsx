@@ -171,7 +171,7 @@ export function Configurator() {
 
           <Reveal className="lg:col-span-6 relative h-full min-h-[480px] md:min-h-[620px] w-full overflow-hidden rounded-2xl border border-cream/10 bg-black shadow-2xl">
             <Image
-              src="/hero1.jpg"
+              src="https://pub-171cdfeae0274fd28337587457de5083.r2.dev/amiraeimages/hero1.jpg"
               alt="FrameCity 3D Models Showcase"
               fill
               sizes="(max-width: 1024px) 100vw, 50vw"

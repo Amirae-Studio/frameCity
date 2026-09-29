@@ -247,23 +247,27 @@ export async function verifyMakerWorldUsername(
   rawTier?: string;
   error?: string;
 }> {
-  const cleanName = username.trim().replace(/^@/, "");
+  // Sanitize: remove leading @ and SQL/PostgREST wildcard characters (% and _)
+  const cleanName = username.trim().replace(/^@/, "").replace(/[%_,]/g, "");
 
   if (!cleanName) {
     return { ok: false, error: "Please enter your MakerWorld username." };
   }
 
   try {
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-    const serviceRoleKey =
-      process.env.SUPABASE_SERVICE_ROLE_KEY ||
-      process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!;
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-    // Query customers table for makerworld_username matching cleanName or @cleanName
+    if (!supabaseUrl || !serviceRoleKey) {
+      console.error("[verifyMakerWorldUsername] Missing SUPABASE_SERVICE_ROLE_KEY or NEXT_PUBLIC_SUPABASE_URL");
+      return { ok: false, error: "Server configuration error. Please contact support." };
+    }
+
+    // Query customers table for exact match on makerworld_username
     const res = await fetch(
-      `${supabaseUrl}/rest/v1/customers?or=(makerworld_username.ilike.${encodeURIComponent(
+      `${supabaseUrl}/rest/v1/customers?or=(makerworld_username.eq.${encodeURIComponent(
         cleanName
-      )},makerworld_username.ilike.${encodeURIComponent("@" + cleanName)})&select=*&limit=1`,
+      )},makerworld_username.eq.${encodeURIComponent("@" + cleanName)})&select=id,makerworld_username,tier,reward_tier&limit=1`,
       {
         headers: {
           apikey: serviceRoleKey,
@@ -312,7 +316,7 @@ export async function redeemBackerAccessCode(
   rawUsername: string
 ): Promise<{ ok: boolean; tier?: BackerTier; error?: string }> {
   const code = rawCode.trim().toUpperCase();
-  const username = rawUsername.trim().replace(/^@/, "");
+  const username = rawUsername.trim().replace(/^@/, "").replace(/[%_,]/g, "");
 
   if (!code) {
     return { ok: false, error: "Please enter an access code." };
@@ -344,10 +348,12 @@ export async function redeemBackerAccessCode(
   const customerTier = verifyRes.tier;
 
   // 3. Fetch access code from `access_codes` table to check validity and code tier
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  const serviceRoleKey =
-    process.env.SUPABASE_SERVICE_ROLE_KEY ||
-    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!;
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!supabaseUrl || !serviceRoleKey) {
+    return { ok: false, error: "Server database configuration error." };
+  }
 
   try {
     const codeRes = await fetch(
@@ -428,21 +434,167 @@ export async function redeemBackerAccessCode(
     };
   }
 
-  // 6. Ensure profile has the exact tier and makerworld_name
-  const { error: profileErr } = await supabase
-    .from("profiles")
-    .update({
-      has_access: true,
-      tier: customerTier,
-      makerworld_name: verifiedUsername,
-      redeemed_code: code,
-      redeemed_at: new Date().toISOString(),
-    })
-    .eq("id", user.id);
-
-  if (profileErr) {
-    console.error("Error updating profile tier:", profileErr);
+  // 6. Ensure profile has the exact tier and makerworld_name using service role for security
+  try {
+    await fetch(`${supabaseUrl}/rest/v1/profiles?id=eq.${user.id}`, {
+      method: "PATCH",
+      headers: {
+        apikey: serviceRoleKey,
+        Authorization: `Bearer ${serviceRoleKey}`,
+        "Content-Type": "application/json",
+        Prefer: "return=minimal",
+      },
+      body: JSON.stringify({
+        has_access: true,
+        tier: customerTier,
+        makerworld_name: verifiedUsername,
+        redeemed_code: code,
+        redeemed_at: new Date().toISOString(),
+      }),
+    });
+  } catch (patchErr) {
+    console.error("Error updating profile with service role:", patchErr);
   }
 
   return { ok: true, tier: customerTier };
+}
+
+/**
+ * Upgrade tier for an existing logged-in user with full DB check on access_codes and backer customers.
+ */
+export async function upgradeUserTier(
+  rawCode: string,
+  optionalUsername?: string
+): Promise<{ ok: boolean; tier?: BackerTier; error?: string }> {
+  const code = rawCode.trim().toUpperCase();
+
+  if (!code) {
+    return { ok: false, error: "Please enter an access code." };
+  }
+
+  // 1. Verify user session
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return { ok: false, error: "Not authenticated. Please log in first." };
+  }
+
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!supabaseUrl || !serviceRoleKey) {
+    return { ok: false, error: "Server database configuration error." };
+  }
+
+  // 2. Fetch current profile
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("has_access, tier, makerworld_name, redeemed_code")
+    .eq("id", user.id)
+    .single();
+
+  const effectiveUsername =
+    (optionalUsername || "").trim().replace(/^@/, "").replace(/[%_,]/g, "") ||
+    profile?.makerworld_name?.trim().replace(/^@/, "");
+
+  // 3. Query access_codes table in database using service role
+  let newTier: BackerTier = "explorer";
+  try {
+    const codeRes = await fetch(
+      `${supabaseUrl}/rest/v1/access_codes?code=eq.${encodeURIComponent(code)}&select=*&limit=1`,
+      {
+        headers: {
+          apikey: serviceRoleKey,
+          Authorization: `Bearer ${serviceRoleKey}`,
+        },
+        cache: "no-store",
+      }
+    );
+
+    if (!codeRes.ok) {
+      return { ok: false, error: "Error checking access code in database." };
+    }
+
+    const codeRecords = await codeRes.json();
+    if (!codeRecords || codeRecords.length === 0) {
+      return { ok: false, error: "This access code is invalid or does not exist." };
+    }
+
+    const codeRecord = codeRecords[0];
+    if (!codeRecord.is_active) {
+      return { ok: false, error: "This access code has been deactivated." };
+    }
+    if (codeRecord.uses >= codeRecord.max_uses) {
+      return { ok: false, error: "This access code has already reached its maximum redemptions." };
+    }
+
+    newTier = normalizeRewardTier(codeRecord.tier || "explorer");
+
+    // 4. Optional / Backer verification if username is present
+    if (effectiveUsername) {
+      const verifyRes = await verifyMakerWorldUsername(effectiveUsername);
+      if (verifyRes.ok && verifyRes.tier) {
+        // If customer exists in DB, ensure code tier matches or is valid for backer
+        if (verifyRes.tier !== newTier) {
+          const codeTierName = newTier.charAt(0).toUpperCase() + newTier.slice(1);
+          const customerTierName = verifyRes.tier.charAt(0).toUpperCase() + verifyRes.tier.slice(1);
+          return {
+            ok: false,
+            error: `Tier mismatch: Code is for ${codeTierName} tier, but MakerWorld backer reward is for ${customerTierName} tier.`,
+          };
+        }
+      }
+    }
+  } catch (dbErr) {
+    console.error("DB check error during tier upgrade:", dbErr);
+    return { ok: false, error: "Failed to verify access code with database." };
+  }
+
+  // 5. Redeem via RPC or atomic database update
+  let rpcRes = await supabase.rpc("redeem_access_code", {
+    p_code: code,
+    p_makerworld_name: effectiveUsername || null,
+  });
+
+  if (rpcRes.error) {
+    rpcRes = await supabase.rpc("redeem_access_code", {
+      p_code: code,
+    });
+  }
+
+  const { data, error } = rpcRes;
+  if (error || !data?.ok) {
+    const errorMsg = data?.error || error?.message;
+    if (errorMsg === "invalid_code" || errorMsg === "code_already_used") {
+      return { ok: false, error: "This access code is invalid or already used." };
+    }
+    return { ok: false, error: errorMsg || "Failed to redeem upgrade code." };
+  }
+
+  // 6. Ensure profile is updated with the new tier
+  try {
+    await fetch(`${supabaseUrl}/rest/v1/profiles?id=eq.${user.id}`, {
+      method: "PATCH",
+      headers: {
+        apikey: serviceRoleKey,
+        Authorization: `Bearer ${serviceRoleKey}`,
+        "Content-Type": "application/json",
+        Prefer: "return=minimal",
+      },
+      body: JSON.stringify({
+        has_access: true,
+        tier: newTier,
+        redeemed_code: code,
+        redeemed_at: new Date().toISOString(),
+        ...(effectiveUsername ? { makerworld_name: effectiveUsername } : {}),
+      }),
+    });
+  } catch (err) {
+    console.error("Error updating profile on upgrade:", err);
+  }
+
+  return { ok: true, tier: newTier };
 }

@@ -156,7 +156,7 @@ export function Hero() {
               muted
               playsInline
               preload="auto"
-              poster="/hero-city.jpg"
+              poster="https://pub-171cdfeae0274fd28337587457de5083.r2.dev/amiraeimages/hero-city.jpg"
               // Added max-h-[50vh] md:max-h-[70vh] so tall phone screens don't stretch the video awkwardly 
               className="w-full max-w-6xl h-auto max-h-[45vh] sm:max-h-[55vh] md:max-h-[85vh] object-contain pointer-events-auto"
               style={{

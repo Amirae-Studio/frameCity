@@ -5,22 +5,22 @@ import { Reveal } from "./Reveal";
 import DriftWall, { DriftWallItem } from "./ui/DriftWall";
 
 const showcaseSlides = [
-  { src: "/london-preview.jpg", label: "London", sub: "City of London" },
-  { src: "/f1.jpg", label: "New York City", sub: "Manhattan Skyline" },
-  { src: "/f2.jpg", label: "Paris", sub: "Eiffel Tower District" },
-  { src: "/paris-frame.jpg", label: "London", sub: "City of London" },
-  { src: "/makerworld.jpg", label: "London", sub: "City of London" },
-  { src: "/f3.jpg", label: "Paris", sub: "Up Close Detail" },
-  { src: "/london-table.jpg", label: "London", sub: "City of London" },
-  { src: "/f4.jpg", label: "London", sub: "City of London" },
-  { src: "/f5.jpg", label: "London", sub: "City of London" },
-  { src: "/london-preview.jpg", label: "London", sub: "Historic Hub" },
-  { src: "/f1.jpg", label: "New York City", sub: "Downtown" },
-  { src: "/f2.jpg", label: "Paris", sub: "Seine View" },
-  { src: "/paris-frame.jpg", label: "London", sub: "Westminster" },
-  { src: "/f3.jpg", label: "Paris", sub: "Architecture Detail" },
-  { src: "/london-table.jpg", label: "London", sub: "Overview" },
-  { src: "/f5.jpg", label: "London", sub: "Night View" },
+  { src: "https://pub-171cdfeae0274fd28337587457de5083.r2.dev/amiraeimages/london-preview.jpg", label: "London", sub: "City of London" },
+  { src: "https://pub-171cdfeae0274fd28337587457de5083.r2.dev/amiraeimages/f1.jpg", label: "New York City", sub: "Manhattan Skyline" },
+  { src: "https://pub-171cdfeae0274fd28337587457de5083.r2.dev/amiraeimages/f2.jpg", label: "Paris", sub: "Eiffel Tower District" },
+  { src: "https://pub-171cdfeae0274fd28337587457de5083.r2.dev/amiraeimages/paris-frame.jpg", label: "London", sub: "City of London" },
+  { src: "https://pub-171cdfeae0274fd28337587457de5083.r2.dev/amiraeimages/makerworld.jpg", label: "London", sub: "City of London" },
+  { src: "https://pub-171cdfeae0274fd28337587457de5083.r2.dev/amiraeimages/f3.jpg", label: "Paris", sub: "Up Close Detail" },
+  { src: "https://pub-171cdfeae0274fd28337587457de5083.r2.dev/amiraeimages/london-table.jpg", label: "London", sub: "City of London" },
+  { src: "https://pub-171cdfeae0274fd28337587457de5083.r2.dev/amiraeimages/f4.jpg", label: "London", sub: "City of London" },
+  { src: "https://pub-171cdfeae0274fd28337587457de5083.r2.dev/amiraeimages/f5.jpg", label: "London", sub: "City of London" },
+  { src: "https://pub-171cdfeae0274fd28337587457de5083.r2.dev/amiraeimages/london-preview.jpg", label: "London", sub: "Historic Hub" },
+  { src: "https://pub-171cdfeae0274fd28337587457de5083.r2.dev/amiraeimages/f1.jpg", label: "New York City", sub: "Downtown" },
+  { src: "https://pub-171cdfeae0274fd28337587457de5083.r2.dev/amiraeimages/f2.jpg", label: "Paris", sub: "Seine View" },
+  { src: "https://pub-171cdfeae0274fd28337587457de5083.r2.dev/amiraeimages/paris-frame.jpg", label: "London", sub: "Westminster" },
+  { src: "https://pub-171cdfeae0274fd28337587457de5083.r2.dev/amiraeimages/f3.jpg", label: "Paris", sub: "Architecture Detail" },
+  { src: "https://pub-171cdfeae0274fd28337587457de5083.r2.dev/amiraeimages/london-table.jpg", label: "London", sub: "Overview" },
+  { src: "https://pub-171cdfeae0274fd28337587457de5083.r2.dev/amiraeimages/f5.jpg", label: "London", sub: "Night View" },
 ];
 
 export function ImageSlideshow() {

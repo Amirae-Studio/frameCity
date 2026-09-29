@@ -5,8 +5,8 @@ export type City = {
 };
 
 export const cities: City[] = [
-  { name: "Paris", img: "/paris-frame.jpg" },
-  { name: "London", img: "/london-preview.jpg" },
+  { name: "Paris", img: "https://pub-171cdfeae0274fd28337587457de5083.r2.dev/amiraeimages/framecity.jpeg" },
+  { name: "London", img: "https://pub-171cdfeae0274fd28337587457de5083.r2.dev/amiraeimages/london-preview.jpg" },
   { name: "New York", img: null },
   { name: "Tokyo", img: null },
   { name: "Hong Kong", img: null },
