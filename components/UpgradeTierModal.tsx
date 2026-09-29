@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { createClient } from "@/lib/supabase/client";
+import { upgradeUserTier } from "@/app/studio/actions";
 
 export function UpgradeTierModal({ currentTier }: { currentTier: string }) {
   const router = useRouter();
@@ -19,34 +19,16 @@ export function UpgradeTierModal({ currentTier }: { currentTier: string }) {
     setStatus("checking");
     setMessage("");
 
-    const supabase = createClient();
-    const { data, error } = await supabase.rpc("redeem_access_code", {
-      p_code: code.trim(),
-    });
+    const res = await upgradeUserTier(code.trim());
 
-    if (error) {
-      console.error("Upgrade tier RPC error:", error);
+    if (!res.ok) {
       setStatus("error");
-      setMessage(error.message || "Something went wrong — please try again.");
-      return;
-    }
-
-    if (!data?.ok) {
-      setStatus("error");
-      if (data?.error === "code_already_used") {
-        setMessage("This access code is invalid or inactive");
-      } else if (data?.error === "code_already_redeemed_by_you") {
-        setMessage("You have already redeemed this access code.");
-      } else if (data?.error === "invalid_code") {
-        setMessage("This access code is invalid or inactive.");
-      } else {
-        setMessage("Could not redeem the code. Please try again.");
-      }
+      setMessage(res.error || "Could not redeem the code. Please try again.");
       return;
     }
 
     setStatus("success");
-    setMessage(`Successfully upgraded to ${String(data.tier).toUpperCase()} tier!`);
+    setMessage(`Successfully upgraded to ${String(res.tier).toUpperCase()} tier!`);
     setTimeout(() => {
       setOpen(false);
       setCode("");

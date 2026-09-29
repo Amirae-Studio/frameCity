@@ -13,7 +13,6 @@ const navigationColumns = [
   {
     title: "Explore",
     links: [
-      { label: "Gallery", href: "/gallery" },
       { label: "Custom Request", href: "#create" },
       { label: "Featured Cities", href: "#craft" },
       { label: "Crowdfunding", href: "https://makerworld.com/en/crowdfunding/313-framecity-high-detailed-cities-in-frames" },
@@ -207,7 +206,7 @@ export function Footer() {
         className="pointer-events-none relative z-0 mt-8 -mb-12 select-none"
       >
         <Image
-          src="/footerlogo.webp"
+          src="https://pub-171cdfeae0274fd28337587457de5083.r2.dev/amiraeimages/footerlogo.webp"
           alt=""
           width={1399}
           height={264}

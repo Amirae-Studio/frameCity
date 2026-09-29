@@ -20,7 +20,6 @@ export function Nav({ initialUser }: { initialUser: NavUser | null }) {
     { label: "Craft", href: isHome ? "#craft" : "/#craft" },
     { label: "Milestones", href: isHome ? "#milestones" : "/#milestones" },
     { label: "Create", href: isHome ? "#create" : "/#create" },
-    { label: "Gallery", href: "/gallery" },
     { label: "Support", href: isHome ? "#support" : "/#support" },
     { label: "FAQ", href: isHome ? "#faq" : "/#faq" },
   ];

@@ -356,7 +356,7 @@ function CityAssembly({
     const sTerrain = controls.terrain / 100;
     const terrainInfo = layerInfo.get("terrain");
     const totalH = terrainInfo ? terrainInfo.max[upAxis] - terrainInfo.min[upAxis] : 0;
-    const baseHeight = totalH * 0.4;
+    const baseHeight = totalH * 0.35;
     const currentTerrainBottom = terrainBottomAtRest - (sTerrain - 1) * baseHeight;
 
     // Water scales upward from its own bottom and never reaches below the
@@ -397,7 +397,7 @@ function CityAssembly({
     const apply = (name: string, vert: number, all: number) => {
       const layer = object.getObjectByName(name);
       const info = layerInfo.get(name);
-      if (!layer || !info || name === "terrain") return;
+      if (!layer || !info || name === "terrain" || name === "water") return;
       AXES.forEach((a) => {
         const s = (a === upAxis ? vert : 1) * all;
         const anchor = a === upAxis ? info.min[a] : info.center[a];
@@ -417,20 +417,20 @@ function CityAssembly({
     apply("roads", controls.roads / 100, 1);
     apply("trees", controls.trees / 100, 1);
     apply("grass", 1, 1);
-    // Bottom-anchored like the rest — the slider moves only the water's top face.
-    apply("water", controls.water / 100, 1);
 
     // Deform terrain base block from bottom up — top surface topography (t=1) stays fixed (0 delta).
     const terrainLayer = object.getObjectByName("terrain");
     const terrainInfo = layerInfo.get("terrain");
     let currentTerrainBottom = terrainBottomAtRest;
+    let terrainOffset = 0;
     if (terrainLayer && terrainInfo) {
       const minY = terrainInfo.min[upAxis];
       const maxY = terrainInfo.max[upAxis];
       const totalH = maxY - minY;
       const topThreshold = minY + 0.35 * totalH;
       const baseHeight = topThreshold - minY;
-      currentTerrainBottom = minY - (sTerrain - 1) * baseHeight;
+      terrainOffset = (sTerrain - 1) * baseHeight;
+      currentTerrainBottom = minY - terrainOffset;
 
       terrainLayer.position.set(0, 0, 0);
       terrainLayer.scale.set(1, 1, 1);
@@ -455,7 +455,7 @@ function CityAssembly({
             const t = THREE.MathUtils.clamp((yLocal - minY) / (topThreshold - minY), 0, 1);
             // Bottom vertices (t=0) get the full terrain extension.
             // Top vertices (t=1) stay fixed — no delta.
-            const delta = (1 - t) * (sTerrain - 1) * baseHeight;
+            const delta = (1 - t) * terrainOffset;
             v[upAxis] = yLocal - delta;
 
             v.applyMatrix4(invMat);
@@ -466,6 +466,25 @@ function CityAssembly({
           posAttr.needsUpdate = true;
           m.geometry.computeVertexNormals();
         }
+      });
+    }
+
+    // Water layer: bottom-anchored; height controlled by controls.water slider,
+    // and follows the bottom of the terrain downwards when terrain height increases
+    // without increasing the water's vertical size.
+    const waterLayer = object.getObjectByName("water");
+    const waterInfo = layerInfo.get("water");
+    if (waterLayer && waterInfo) {
+      const sWater = controls.water / 100;
+      AXES.forEach((a) => {
+        const s = a === upAxis ? sWater : 1;
+        const anchor = a === upAxis ? waterInfo.min[a] : waterInfo.center[a];
+        waterLayer.scale[a] = s;
+        let pos = anchor * (1 - s);
+        if (a === upAxis) {
+          pos -= terrainOffset;
+        }
+        waterLayer.position[a] = pos;
       });
     }
 

@@ -132,7 +132,7 @@ export function Support() {
             <div className="lg:col-span-6 relative flex flex-col justify-center overflow-hidden rounded-xl bg-black group min-h-[340px] md:min-h-[460px]">
               {isPlaying ? (
                 <video
-                  src="/Framecity_video.mp4"
+                  src="https://pub-171cdfeae0274fd28337587457de5083.r2.dev/videos/Homepage-Video.mp4"
                   autoPlay
                   controls
                   className="w-full h-full object-cover rounded-xl"
@@ -140,7 +140,7 @@ export function Support() {
               ) : (
                 <>
                   <Image
-                    src="/frame.jpeg"
+                    src="https://pub-171cdfeae0274fd28337587457de5083.r2.dev/amiraeimages/framecity.jpeg"
                     alt="FrameCity Paris Model in Frame"
                     fill
                     sizes="(max-width: 1024px) 100vw, 50vw"
@@ -196,7 +196,7 @@ export function Support() {
                 <div className="flex items-center gap-3 mb-6 pb-5 border-b border-cream/10">
                   <div className="w-10 h-10 rounded-full bg-emerald-950/20 border border-emerald-500/30 flex items-center justify-center overflow-hidden relative flex-shrink-0">
                     <Image
-                      src="/amirae.webp"
+                      src="https://pub-171cdfeae0274fd28337587457de5083.r2.dev/amiraeimages/amirae.webp"
                       alt={`${campaign.creator_name} Logo`}
                       width={40}
                       height={40}

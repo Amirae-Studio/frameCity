@@ -26,7 +26,7 @@ export function Craft() {
         <div className="relative h-[360px] w-full overflow-hidden rounded-[12px] border border-cream/10 md:h-[520px] isolate transform-gpu">
           <video
             ref={videoRef}
-            src="https://joewkzjnrikotpgzyywh.supabase.co/storage/v1/object/public/gallery/videos/Making-Of-Framecity.mp4"
+            src="https://pub-171cdfeae0274fd28337587457de5083.r2.dev/videos/Making-Of-Framecity.mp4"
             autoPlay
             loop
             muted
