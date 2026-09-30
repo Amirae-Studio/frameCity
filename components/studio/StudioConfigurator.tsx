@@ -102,7 +102,7 @@ export function StudioConfigurator({
   const printer = printers.find((p) => p.id === printerId)!;
 
   const layerSet = useMemo(
-    () => new Set(modelFiles.map((f) => f.name)),
+    () => new Set(modelFiles.map((f) => f.layer || f.name)),
     [modelFiles]
   );
 
@@ -1009,49 +1009,71 @@ export function StudioConfigurator({
                         {activeColorTab === "trees" && layerSet.has("trees") && (
                           <FilamentColorCard
                             title="TREES COLOUR"
-                            value={cityCtl.layerColors.trees || DEFAULT_LAYER_COLORS.trees}
+                            value={
+                              cityCtl.layerColors.trees ||
+                              DEFAULT_LAYER_COLORS.trees
+                            }
                             onChange={(hex) => setLayerColor("trees", hex)}
                           />
                         )}
                         {activeColorTab === "terrain" && layerSet.has("terrain") && (
                           <FilamentColorCard
                             title="TERRAIN COLOUR"
-                            value={cityCtl.layerColors.terrain || DEFAULT_LAYER_COLORS.terrain}
+                            value={
+                              cityCtl.layerColors.terrain ||
+                              DEFAULT_LAYER_COLORS.terrain
+                            }
                             onChange={(hex) => setLayerColor("terrain", hex)}
                           />
                         )}
                         {activeColorTab === "grass" && layerSet.has("grass") && (
                           <FilamentColorCard
                             title="GRASS COLOUR"
-                            value={cityCtl.layerColors.grass || DEFAULT_LAYER_COLORS.grass}
+                            value={
+                              cityCtl.layerColors.grass ||
+                              DEFAULT_LAYER_COLORS.grass
+                            }
                             onChange={(hex) => setLayerColor("grass", hex)}
                           />
                         )}
                         {activeColorTab === "small-building" && layerSet.has("small-building") && (
                           <FilamentColorCard
                             title="SMALL BUILDINGS COLOUR"
-                            value={cityCtl.layerColors["small-building"] || DEFAULT_LAYER_COLORS["small-building"]}
+                            value={
+                              cityCtl.layerColors["small-building"] ||
+                              DEFAULT_LAYER_COLORS["small-building"]
+                            }
                             onChange={(hex) => setLayerColor("small-building", hex)}
                           />
                         )}
                         {activeColorTab === "main-building" && layerSet.has("main-building") && (
                           <FilamentColorCard
                             title="MAIN BUILDING COLOUR"
-                            value={cityCtl.layerColors["main-building"] || DEFAULT_LAYER_COLORS["main-building"]}
+                            value={
+                              cityCtl.layerColors["main-building"] ||
+                              modelFiles.find((f) => f.layer === "main-building" && f.colorHint)?.colorHint ||
+                              DEFAULT_LAYER_COLORS["main-building"]
+                            }
                             onChange={(hex) => setLayerColor("main-building", hex)}
                           />
                         )}
                         {activeColorTab === "roads" && layerSet.has("roads") && (
                           <FilamentColorCard
                             title="ROADS COLOUR"
-                            value={cityCtl.layerColors.roads || DEFAULT_LAYER_COLORS.roads}
+                            value={
+                              cityCtl.layerColors.roads ||
+                              DEFAULT_LAYER_COLORS.roads
+                            }
                             onChange={(hex) => setLayerColor("roads", hex)}
                           />
                         )}
                         {activeColorTab === "water" && layerSet.has("water") && (
                           <FilamentColorCard
                             title="WATER COLOUR"
-                            value={cityCtl.layerColors.water || DEFAULT_LAYER_COLORS.water}
+                            value={
+                              cityCtl.layerColors.water ||
+                              DEFAULT_LAYER_COLORS.water
+                            }
                             onChange={(hex) => setLayerColor("water", hex)}
                           />
                         )}

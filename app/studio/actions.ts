@@ -1,10 +1,20 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
+import { inferColorFromName } from "@/lib/studio";
 import type { StudioCity, StudioBuilding } from "@/lib/studio";
 import { listR2Objects, getR2PublicUrl, R2_BUCKET } from "@/lib/r2";
 
-export type ModelFile = { name: string; url: string; ext?: string };
+export type ModelFile = {
+  name: string;
+  url: string;
+  ext?: string;
+  layer: string;
+  isSubPart: boolean;
+  partName?: string;
+  partKey?: string;
+  colorHint?: string | null;
+};
 
 /** Map Supabase bucket name → R2 bucket name */
 function resolveR2Bucket(bucketName: string): string {
@@ -15,10 +25,10 @@ function resolveR2Bucket(bucketName: string): string {
 const MODEL_EXTENSIONS = /\.(glb|stl)$/i;
 
 /**
- * List every GLB or STL model file in a location folder and mint short-lived signed URLs.
+ * List every GLB or STL model file in a location folder and mint stream URLs.
  * Defaults to bucket 'city-models', but supports 'buildings' bucket for standalone buildings.
  *
- * Now served from Cloudflare R2 instead of Supabase Storage.
+ * Supports sub-part folders for multi-color layers (e.g. main-building/middle-red.stl).
  */
 export async function getModelFiles(
   prefix: string,
@@ -47,9 +57,10 @@ export async function getModelFiles(
   // Trailing slash so "paris/tour-eiffel" doesn't also match "paris/tour-eiffel-2/…"
   const folder = prefix.replace(/\/+$/, "");
 
+  let matchedPrefix = `${folder}/`;
   let objects: { key: string; size: number }[] = [];
   try {
-    objects = await listR2Objects(r2Bucket, `${folder}/`);
+    objects = await listR2Objects(r2Bucket, matchedPrefix);
 
     // Fallback: If 0 objects found, try with double-prefix (e.g. city/city/location) or single-prefix
     if (objects.length === 0 && folder.includes("/")) {
@@ -57,7 +68,11 @@ export async function getModelFiles(
       if (parts.length === 2 && parts[0] !== parts[1]) {
         const doublePrefix = `${parts[0]}/${parts[0]}/${parts[1]}/`;
         console.log(`[R2] Retrying with double prefix "${doublePrefix}"`);
-        objects = await listR2Objects(r2Bucket, doublePrefix);
+        const doubleObjects = await listR2Objects(r2Bucket, doublePrefix);
+        if (doubleObjects.length > 0) {
+          objects = doubleObjects;
+          matchedPrefix = doublePrefix;
+        }
       }
     }
     console.log(`[R2] found ${objects.length} objects for "${prefix}"`);
@@ -76,17 +91,56 @@ export async function getModelFiles(
   const out: ModelFile[] = validObjects.map((obj) => {
     const isStl = obj.key.toLowerCase().endsWith(".stl");
     const streamUrl = `/api/r2/${r2Bucket}/${obj.key}`;
-    const filename = obj.key.split("/").pop() ?? obj.key;
+
+    // Relative path inside the location folder
+    let relPath = obj.key;
+    if (obj.key.startsWith(matchedPrefix)) {
+      relPath = obj.key.slice(matchedPrefix.length);
+    } else if (obj.key.includes(folder)) {
+      relPath = obj.key.slice(obj.key.indexOf(folder) + folder.length).replace(/^\/+/, "");
+    }
+
+    const pathSegments = relPath.split("/").filter(Boolean);
+    let layer = "";
+    let isSubPart = false;
+    let partName = "";
+    let partKey = "";
+    let colorHint: string | null = null;
+
+    if (pathSegments.length > 1) {
+      // Sub-part inside a layer folder (e.g. main-building/middle-red.stl)
+      layer = pathSegments[0].replace(/\.(glb|stl)$/i, "");
+      const filename = pathSegments[pathSegments.length - 1];
+      partName = filename.replace(/\.(glb|stl)$/i, "");
+      isSubPart = true;
+      partKey = `${layer}/${partName}`;
+      colorHint = inferColorFromName(partName);
+    } else {
+      // Root layer file (e.g. main-building.stl or terrain.stl)
+      const filename = pathSegments[0] || obj.key.split("/").pop() || "layer";
+      layer = filename.replace(/\.(glb|stl)$/i, "");
+      partName = layer;
+      isSubPart = false;
+      partKey = layer;
+      colorHint = inferColorFromName(layer);
+    }
+
     return {
-      name: filename.replace(/\.(glb|stl)$/i, ""),
+      name: isSubPart ? partName : layer,
       url: streamUrl,
       ext: isStl ? "stl" : "glb",
+      layer,
+      isSubPart,
+      partName,
+      partKey,
+      colorHint,
     };
   });
 
-  console.log(`[R2] returning ${out.length} model files`);
+  console.log(`[R2] returning ${out.length} model files (subparts: ${out.filter(f => f.isSubPart).length})`);
   return out;
 }
+
 
 /**
  * Fetch all cities and their places directly from Supabase database tables (`cities` and `places`).

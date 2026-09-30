@@ -198,23 +198,43 @@ function CityAssembly({
   } = useMemo(() => {
     const object = new THREE.Group();
 
+    // Track layer groups
+    const layerGroups = new Map<string, THREE.Group>();
+    const getOrCreateLayerGroup = (layerName: string) => {
+      let g = layerGroups.get(layerName);
+      if (!g) {
+        g = new THREE.Group();
+        g.name = layerName;
+        layerGroups.set(layerName, g);
+        object.add(g);
+      }
+      return g;
+    };
+
     // Process GLB layers
     glbFiles.forEach((file, i) => {
       const gltfObj = Array.isArray(gltfs) ? gltfs[i] : gltfs;
       if (gltfObj && gltfObj.scene) {
         const layer = gltfObj.scene.clone(true);
-        layer.name = file.name; // "roads", "terrain", "small-building", …
+        const layerName = file.layer || file.name;
+        layer.name = file.partKey || file.name;
         layer.traverse((o) => {
           const m = o as THREE.Mesh;
           if (m.isMesh) {
             m.castShadow = true;
             m.receiveShadow = true;
+            m.userData.layerName = layerName;
+            m.userData.partKey = file.partKey || file.name;
+            m.userData.partName = file.partName || file.name;
+            m.userData.isSubPart = !!file.isSubPart;
+            m.userData.colorHint = file.colorHint;
             if (m.geometry && m.geometry.attributes.position) {
               m.userData.origPosition = m.geometry.attributes.position.array.slice();
             }
           }
         });
-        object.add(layer);
+        const parentGroup = getOrCreateLayerGroup(layerName);
+        parentGroup.add(layer);
       }
     });
 
@@ -238,17 +258,22 @@ function CityAssembly({
           metalness: 0.05,
         });
         const mesh = new THREE.Mesh(g, mat);
+        const layerName = file.layer || file.name;
+        mesh.name = file.partKey || file.name;
         mesh.castShadow = true;
         mesh.receiveShadow = true;
+        mesh.userData.layerName = layerName;
+        mesh.userData.partKey = file.partKey || file.name;
+        mesh.userData.partName = file.partName || file.name;
+        mesh.userData.isSubPart = !!file.isSubPart;
+        mesh.userData.colorHint = file.colorHint;
 
         if (g.attributes.position) {
           mesh.userData.origPosition = g.attributes.position.array.slice();
         }
 
-        const layer = new THREE.Group();
-        layer.name = file.name;
-        layer.add(mesh);
-        object.add(layer);
+        const parentGroup = getOrCreateLayerGroup(layerName);
+        parentGroup.add(mesh);
       }
     });
 
@@ -668,6 +693,35 @@ function CityAssembly({
       }
     }
 
+    // Determine which layers have subparts
+    const layerSubpartsMap = new Map<string, boolean>();
+    files.forEach((f) => {
+      if (f.isSubPart) {
+        layerSubpartsMap.set(f.layer, true);
+      }
+    });
+
+    // Apply visibility of subparts vs monolithic
+    object.children.forEach((layerGroup) => {
+      const layerName = layerGroup.name;
+      if (layerName === "revit" || layerName.startsWith("boolean_cube")) return;
+      const hasSubParts = !!layerSubpartsMap.get(layerName);
+
+      layerGroup.traverse((child) => {
+        if (child === layerGroup) return;
+        const isSubPart = !!child.userData.isSubPart;
+        if (hasSubParts) {
+          if (isSubPart) {
+            child.visible = !!controls.enableColors;
+          } else {
+            child.visible = !controls.enableColors;
+          }
+        } else {
+          child.visible = true;
+        }
+      });
+    });
+
     const setVisible = (name: string, hidden: boolean) => {
       const layer = object.getObjectByName(name);
       if (layer) layer.visible = !hidden;
@@ -677,22 +731,23 @@ function CityAssembly({
     setVisible("grass", controls.hideGrass);
     setVisible("water", !controls.enableWater);
 
-    // Apply layer colors dynamically
+    // Apply layer and sub-part colors dynamically
     object.children.forEach((layer) => {
       if (layer.name.startsWith("boolean_cube")) return;
-      let targetHex = "#e9e6df";
-      if (controls.enableColors) {
-        if (layer.name === "revit") {
-          targetHex =
-            controls.layerColors.terrain ||
-            DEFAULT_LAYER_COLORS.terrain ||
-            "#545454";
-        } else {
-          targetHex =
-            controls.layerColors[layer.name] ||
-            DEFAULT_LAYER_COLORS[layer.name] ||
-            "#e9e6df";
+
+      if (layer.name === "revit") {
+        const targetHex = controls.enableColors
+          ? controls.layerColors.terrain || DEFAULT_LAYER_COLORS.terrain || "#545454"
+          : "#e9e6df";
+        const revitMesh = layer as THREE.Mesh;
+        if (revitMesh.isMesh && revitMesh.material) {
+          if (!revitMesh.userData.clonedMat) {
+            revitMesh.material = (revitMesh.material as THREE.Material).clone();
+            revitMesh.userData.clonedMat = true;
+          }
+          (revitMesh.material as THREE.MeshStandardMaterial).color?.set(targetHex);
         }
+        return;
       }
 
       layer.traverse((o) => {
@@ -704,6 +759,21 @@ function CityAssembly({
           }
           const mat = m.material as THREE.MeshStandardMaterial;
           if (mat.color) {
+            let targetHex = "#e9e6df";
+            if (controls.enableColors) {
+              const layerName = m.userData.layerName || layer.name;
+              const colorHint = m.userData.colorHint;
+
+              // If user explicitly customized the color for this entire layer (e.g. main-building), use it
+              // Otherwise, default to the part's own filename hex colorHint or default layer color
+              if (controls.layerColors && controls.layerColors[layerName]) {
+                targetHex = controls.layerColors[layerName];
+              } else if (colorHint) {
+                targetHex = colorHint;
+              } else {
+                targetHex = DEFAULT_LAYER_COLORS[layerName] || "#FFFFFF";
+              }
+            }
             mat.color.set(targetHex);
           }
         }

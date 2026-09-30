@@ -106,6 +106,40 @@ export const DEFAULT_LAYER_COLORS: Record<string, string> = {
   water: "#0086D6", // Cyan / Light Blue
 };
 
+/**
+ * Infer default Bambu filament hex color from a part or file name.
+ * e.g. "base-C12E1F" -> "#C12E1F", "middle-red" -> "#C12E1F", "tip-white" -> "#FFFFFF"
+ */
+export function inferColorFromName(filename: string): string | null {
+  // 1. Direct 6-character hex extraction (e.g. base-C12E1F.stl, middle-FFFFFF.stl)
+  const hexMatch =
+    filename.match(/[-_]([0-9A-Fa-f]{6})(?:\.|$)/i) ||
+    filename.match(/\b([0-9A-Fa-f]{6})\b/i);
+  if (hexMatch && hexMatch[1]) {
+    return `#${hexMatch[1].toUpperCase()}`;
+  }
+
+  // 2. Fallback to common filament color names
+  const lower = filename.toLowerCase();
+  if (lower.includes("red") || lower.includes("maroon")) return "#C12E1F"; // Bambu Red
+  if (lower.includes("white")) return "#FFFFFF"; // Bambu Jade White
+  if (lower.includes("black")) return "#000000"; // Bambu Black
+  if (lower.includes("cyan") || lower.includes("azure")) return "#0086D6"; // Bambu Cyan
+  if (lower.includes("blue")) return "#0056B8"; // Bambu Cobalt Blue
+  if (lower.includes("green")) return "#3F8E43"; // Bambu Mistletoe Green
+  if (lower.includes("yellow")) return "#FEC600"; // Bambu Sunflower Yellow
+  if (lower.includes("orange")) return "#FF6A13"; // Bambu Orange
+  if (lower.includes("purple") || lower.includes("violet")) return "#5E43B7"; // Bambu Purple
+  if (lower.includes("pink") || lower.includes("magenta")) return "#F55A74"; // Bambu Pink
+  if (lower.includes("gray") || lower.includes("grey")) return "#8E9089"; // Bambu Gray
+  if (lower.includes("brown") || lower.includes("bronze") || lower.includes("cocoa")) return "#6F5034"; // Bambu Cocoa Brown
+  if (lower.includes("gold")) return "#E4BD68"; // Bambu Gold
+  if (lower.includes("beige")) return "#F7E6DE"; // Bambu Beige
+  if (lower.includes("silver")) return "#A6A9AA"; // Bambu Silver
+  return null;
+}
+
+
 // Live "Manipulate city" values (percentages + layer visibility + colors).
 export type CityControls = {
   small: number; // small-building · vertical only
@@ -150,6 +184,6 @@ export const CITY_DEFAULTS: CityControls = {
   revitUniformScale: true,
   revitUniform: 95,
   enableColors: false,
-  layerColors: { ...DEFAULT_LAYER_COLORS },
+  layerColors: {},
 };
 
