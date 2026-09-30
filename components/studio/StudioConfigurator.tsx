@@ -984,6 +984,17 @@ export function StudioConfigurator({
 
                     {cityCtl.enableColors ? (
                       <div className="flex flex-col gap-3 pt-2">
+                         {layerSet.has("water") && (
+                          <div className="flex flex-col gap-3 rounded-xl border border-cream/[0.12] bg-cream/[0.03] p-3">
+                            <SegmentedToggle
+                              label="Water layer"
+                              checked={cityCtl.enableWater}
+                              onCheckedChange={(v) => setCtl("enableWater", v)}
+                            />
+                           
+                          </div>
+                        )}
+
                         {availableColorLayers.length > 1 && (
                           <div className="grid grid-cols-2 gap-1.5 rounded-xl border border-cream/[0.14] p-1.5 bg-cream/[0.03]">
                             {availableColorLayers.map((l) => {
