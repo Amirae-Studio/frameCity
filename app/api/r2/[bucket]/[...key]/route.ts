@@ -19,23 +19,13 @@ export async function GET(
     return new NextResponse("Not found", { status: 404 });
   }
 
-  // Same gate as getModelFiles: signed in + redeemed an access code.
-  // Done here (not in middleware) because the middleware matcher skips *.stl.
+  // Only authenticated users can stream 3D models for preview & viewport rendering.
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) {
     return new NextResponse("Unauthorized", { status: 401 });
-  }
-
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("has_access")
-    .eq("id", user.id)
-    .single();
-  if (!profile?.has_access) {
-    return new NextResponse("Forbidden", { status: 403 });
   }
 
   try {

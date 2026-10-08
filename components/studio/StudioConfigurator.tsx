@@ -19,6 +19,8 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import { getModelFiles, type ModelFile } from "@/app/studio/actions";
 import { recordDownload } from "@/app/actions/downloads";
 import { TempAccessModal } from "@/components/TempAccessModal";
+import { BackerCrowdfundModal } from "@/components/BackerCrowdfundModal";
+import { ConnectStudioModal } from "@/components/ConnectStudioModal";
 import type { GizmoMode } from "./StudioScene";
 import { exportTo3MF, collectTransformedMeshes } from "@/lib/3mfExporter";
 import Scrubber from "../ui/Scrubber";
@@ -54,11 +56,13 @@ export function StudioConfigurator({
   city,
   location,
   user,
+  hasAccess = false,
 }: {
   type?: "city" | "building";
   city: { slug: string; name: string };
   location: { slug: string; name: string; area: string; coords: string };
   user: NavUser | null;
+  hasAccess?: boolean;
 }) {
   const meshRef = useRef<THREE.Object3D | null>(null);
   const { mode: themeMode } = useTheme();
@@ -75,6 +79,8 @@ export function StudioConfigurator({
   const [downloadNotice, setDownloadNotice] = useState<string | null>(null);
   const [downloadLimitModal, setDownloadLimitModal] = useState(false);
   const [tempAccessModalOpen, setTempAccessModalOpen] = useState(false);
+  const [backerCrowdfundModalOpen, setBackerCrowdfundModalOpen] = useState(false);
+  const [connectModalOpen, setConnectModalOpen] = useState(false);
   const [revitInfoModal, setRevitInfoModal] = useState(false);
 
   // Active dashboard tab state
@@ -187,6 +193,11 @@ export function StudioConfigurator({
   // model, not a precondition for 3MF — with them off it just exports in one
   // colour.
   async function downloadModel(format: ExportFormat) {
+    if (!hasAccess) {
+      setBackerCrowdfundModalOpen(true);
+      return;
+    }
+
     const mesh = meshRef.current;
     if (!mesh) return;
 
@@ -200,6 +211,12 @@ export function StudioConfigurator({
         setTempAccessModalOpen(true);
       } else if (res.error === "limit_reached" || res.remaining === 0) {
         setDownloadLimitModal(true);
+      } else if (
+        res.error?.includes("unlock access") ||
+        res.error?.includes("valid code") ||
+        res.error === "Not authenticated"
+      ) {
+        setBackerCrowdfundModalOpen(true);
       } else {
         alert(res.error || "Failed to process download quota.");
       }
@@ -335,6 +352,20 @@ export function StudioConfigurator({
       <TempAccessModal
         isOpen={tempAccessModalOpen}
         onClose={() => setTempAccessModalOpen(false)}
+      />
+
+      {/* Crowdfunding Backer Modal (MakerWorld & Kickstarter) */}
+      <BackerCrowdfundModal
+        isOpen={backerCrowdfundModalOpen}
+        onClose={() => setBackerCrowdfundModalOpen(false)}
+        onOpenConnectModal={() => setConnectModalOpen(true)}
+      />
+
+      {/* Connect Studio Modal */}
+      <ConnectStudioModal
+        isOpen={connectModalOpen}
+        onClose={() => setConnectModalOpen(false)}
+        email={user?.email || ""}
       />
 
       {/* Revit Info Modal */}
@@ -485,6 +516,16 @@ export function StudioConfigurator({
                 {user.name}
               </span>
             </a>
+          )}
+          {!hasAccess && (
+            <button
+              onClick={() => setConnectModalOpen(true)}
+              className="hidden sm:inline-flex items-center gap-1.5 rounded-full border border-[var(--accent)]/30 bg-[var(--accent)]/10 px-3 py-1 font-mono text-[10.5px] font-bold uppercase tracking-[0.14em] text-[var(--accent)] hover:bg-[var(--accent)]/20 transition-all cursor-pointer"
+              title="Studio View Only — Click to Connect Access Code"
+            >
+              <span className="h-1.5 w-1.5 rounded-full bg-[var(--accent)] animate-pulse" />
+              <span>View Only · Connect Code</span>
+            </button>
           )}
           <ThemeToggle />
           <div className="flex items-center gap-1.5">

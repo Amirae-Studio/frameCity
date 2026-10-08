@@ -8,6 +8,7 @@ import { fetchStudioCities, fetchStudioBuildings } from "@/app/studio/actions";
 import { SpotlightCard } from "../ui/SpotlightCard";
 import { ShinyText } from "../ui/ShinyText"; // Kept for your other potential uses
 import { StepTimeline } from "../ui/StepLine";
+import { ConnectStudioModal } from "@/components/ConnectStudioModal";
 
 const ease = [0.22, 1, 0.36, 1] as const;
 
@@ -16,15 +17,22 @@ export type CategoryType = "cities" | "buildings";
 export function StudioPicker({
   initialCities,
   initialBuildings,
+  hasAccess = false,
+  email = "",
 }: {
   initialCities?: StudioCity[];
   initialBuildings?: StudioBuilding[];
+  hasAccess?: boolean;
+  email?: string;
 }) {
   const router = useRouter();
   const [cities, setCities] = useState<StudioCity[]>(initialCities || []);
   const [buildings, setBuildings] = useState<StudioBuilding[]>(
     initialBuildings || []
   );
+
+  // Auto-open connect access modal if user has not unlocked studio access yet
+  const [connectModalOpen, setConnectModalOpen] = useState(!hasAccess);
 
   const [category, setCategory] = useState<CategoryType | null>("cities");
   const [selectedCountry, setSelectedCountry] = useState<string | null>(null);
@@ -118,6 +126,31 @@ export function StudioPicker({
         animate={{ scale: [1, 1.15, 1], opacity: [0.1, 0.16, 0.1] }}
         transition={{ duration: 8, repeat: Infinity, ease: "easeInOut" }}
       />
+
+      {/* Connect Studio Modal */}
+      <ConnectStudioModal
+        isOpen={connectModalOpen}
+        onClose={() => setConnectModalOpen(false)}
+        email={email}
+      />
+
+      {/* View Only Mode Top Banner */}
+      {/* {!hasAccess && (
+        <div className="mb-8 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[var(--accent)]/30 bg-[var(--accent)]/10 px-5 py-3.5 backdrop-blur-md">
+          <div className="flex items-center gap-2.5">
+            <span className="h-2 w-2 rounded-full bg-[var(--accent)] animate-pulse" />
+            <span className="font-mono text-[12px] text-cream/90 font-medium">
+              3D View Only Mode — Models available for preview
+            </span>
+          </div>
+          <button
+            onClick={() => setConnectModalOpen(true)}
+            className="flex items-center gap-1.5 rounded-full bg-cream px-4 py-1.5 font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-[var(--color-base)] transition-transform hover:scale-[1.03] cursor-pointer"
+          >
+            <span>✨ Connect Studio Code</span>
+          </button>
+        </div>
+      )} */}
 
       <AnimatePresence mode="wait">
         {!selectedCountry ? (

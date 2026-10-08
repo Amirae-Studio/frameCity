@@ -43,13 +43,6 @@ export async function getModelFiles(
   } = await supabase.auth.getUser();
   if (!user) return [];
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("has_access")
-    .eq("id", user.id)
-    .single();
-  if (!profile?.has_access) return [];
-
   // Fetch file list from R2
   const r2Bucket = resolveR2Bucket(bucketName);
   console.log(`[R2] listR2Objects bucket="${r2Bucket}" prefix="${prefix}"`);

@@ -25,7 +25,7 @@ export default async function ConfigurePage({
     .select("has_access")
     .eq("id", user.id)
     .single();
-  if (!profile?.has_access) redirect("/studio");
+  const hasAccess = Boolean(profile?.has_access);
 
   const params = await searchParams;
 
@@ -47,6 +47,7 @@ export default async function ConfigurePage({
           coords: building.coords || "",
         }}
         user={toNavUser(user)}
+        hasAccess={hasAccess}
       />
     );
   }
@@ -64,6 +65,7 @@ export default async function ConfigurePage({
       city={{ slug: city.slug, name: city.name }}
       location={location}
       user={toNavUser(user)}
+      hasAccess={hasAccess}
     />
   );
 }

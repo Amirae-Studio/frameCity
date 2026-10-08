@@ -27,6 +27,7 @@ export default async function StudioPage() {
     .single();
 
   const email = user.email ?? "your account";
+  const hasAccess = Boolean(profile?.has_access);
   const cities = await fetchStudioCities();
   const buildings = await fetchStudioBuildings();
 
@@ -45,13 +46,12 @@ export default async function StudioPage() {
       </header>
 
       <main className="flex flex-1 flex-col">
-        {profile?.has_access ? (
-          <StudioPicker initialCities={cities} initialBuildings={buildings} />
-        ) : (
-          <div className="flex flex-1 items-center justify-center px-6 py-16">
-            <AccessGate email={email} />
-          </div>
-        )}
+        <StudioPicker
+          initialCities={cities}
+          initialBuildings={buildings}
+          hasAccess={hasAccess}
+          email={email}
+        />
       </main>
     </div>
   );
