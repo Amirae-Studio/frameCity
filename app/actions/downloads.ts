@@ -21,6 +21,8 @@ export type DownloadResult =
     }
   | {
       ok: false;
+      /** Machine-readable error code. Use this in conditionals, not `error`. */
+      errorCode: "no_access" | "limit_reached" | "temp_access" | "not_authenticated" | "db_error";
       error: string;
       isTempAccess?: boolean;
       tier?: string;
@@ -88,7 +90,7 @@ export async function recordDownload(
   } = await supabase.auth.getUser();
 
   if (!user) {
-    return { ok: false, error: "Not authenticated" };
+    return { ok: false, errorCode: "not_authenticated", error: "Not authenticated" };
   }
 
   // Check user profile & access
@@ -99,7 +101,7 @@ export async function recordDownload(
     .single();
 
   if (!profile?.has_access) {
-    return { ok: false, error: "You must unlock access with a valid code first." };
+    return { ok: false, errorCode: "no_access", error: "You must unlock access with a valid code first." };
   }
 
   let isTemp = !!profile.is_temp_access;
@@ -124,6 +126,7 @@ export async function recordDownload(
   if (isTemp) {
     return {
       ok: false,
+      errorCode: "temp_access",
       error: "Due to security policy not able to download until campaign finish.",
       isTempAccess: true,
     };
@@ -177,7 +180,8 @@ export async function recordDownload(
   if (used >= 25) {
     return {
       ok: false,
-      error: "limit_reached",
+      errorCode: "limit_reached",
+      error: "Monthly download limit reached.",
       tier: "explorer",
       used,
       limit: 25,
@@ -194,7 +198,7 @@ export async function recordDownload(
 
   if (insertErr) {
     console.error("Failed to insert user download:", insertErr);
-    return { ok: false, error: "Failed to record download in database." };
+    return { ok: false, errorCode: "db_error", error: "Failed to record download in database." };
   }
 
   const newUsed = used + 1;

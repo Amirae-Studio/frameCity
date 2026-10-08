@@ -7,3 +7,4 @@ out
 *.log
 scratch
 FrameCity.html
+tsconfig.tsbuildinfo

@@ -14,6 +14,9 @@ export type ModelFile = {
   partName?: string;
   partKey?: string;
   colorHint?: string | null;
+  /** True for decimated preview GLBs served to view-only users.
+   *  The viewer must apply the same Z-up→Y-up rotation as for raw STLs. */
+  isPreview?: boolean;
 };
 
 /** Map Supabase bucket name → R2 bucket name */
@@ -42,6 +45,16 @@ export async function getModelFiles(
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return [];
+
+  // Decide whether this user gets full-quality or preview-quality files.
+  // has_access=true  → full STL/GLB under their normal R2 key
+  // has_access=false → decimated preview GLBs under the "preview/" prefix
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("has_access")
+    .eq("id", user.id)
+    .single();
+  const hasAccess = Boolean(profile?.has_access);
 
   // Fetch file list from R2
   const r2Bucket = resolveR2Bucket(bucketName);
@@ -80,10 +93,17 @@ export async function getModelFiles(
     return [];
   }
 
-  // Use /api/r2 stream endpoint so Three.js STLLoader/GLTFLoader bypasses CORS issues
+  // Use /api/r2 stream endpoint so Three.js STLLoader/GLTFLoader bypasses CORS issues.
+  // For view-only users, swap the key to its preview/ counterpart so they receive the
+  // decimated GLB instead of the print-ready STL (the /api/r2 route enforces this too).
   const out: ModelFile[] = validObjects.map((obj) => {
-    const isStl = obj.key.toLowerCase().endsWith(".stl");
-    const streamUrl = `/api/r2/${r2Bucket}/${obj.key}`;
+    const originalKey = obj.key;
+    const resolvedKey = hasAccess
+      ? originalKey
+      : `preview/${originalKey.replace(/\.(stl|glb)$/i, ".glb")}`;
+    const isStl = !hasAccess ? false : originalKey.toLowerCase().endsWith(".stl");
+    const streamUrl = `/api/r2/${r2Bucket}/${resolvedKey}`;
+    const isPreview = !hasAccess;
 
     // Relative path inside the location folder
     let relPath = obj.key;
@@ -127,6 +147,7 @@ export async function getModelFiles(
       partName,
       partKey,
       colorHint,
+      isPreview,
     };
   });
 
@@ -294,9 +315,15 @@ export async function verifyMakerWorldUsername(
   rawTier?: string;
   error?: string;
 }> {
+  // Validate the raw input before sanitizing so we catch a truly empty field.
+  if (!username || !username.trim()) {
+    return { ok: false, error: "Please enter your MakerWorld username." };
+  }
+
   // Sanitize: remove leading @ and SQL/PostgREST wildcard characters (% and _)
   const cleanName = username.trim().replace(/^@/, "").replace(/[%_,]/g, "");
 
+  // After sanitization the name may still be empty (e.g. input was just "@")
   if (!cleanName) {
     return { ok: false, error: "Please enter your MakerWorld username." };
   }
@@ -361,15 +388,16 @@ export async function verifyMakerWorldUsername(
 export async function redeemBackerAccessCode(
   rawCode: string,
   rawUsername: string
-): Promise<{ ok: boolean; tier?: BackerTier; error?: string }> {
+): Promise<{ ok: boolean; tier?: BackerTier; error?: string; errorCode?: string }> {
   const code = rawCode.trim().toUpperCase();
   const username = rawUsername.trim().replace(/^@/, "").replace(/[%_,]/g, "");
 
-  if (!code) {
-    return { ok: false, error: "Please enter an access code." };
-  }
+  // Check username first — it's the first field in the UI flow.
   if (!username) {
     return { ok: false, error: "Please enter your MakerWorld username." };
+  }
+  if (!code) {
+    return { ok: false, error: "Please enter an access code." };
   }
 
   // 1. Verify user session
@@ -472,12 +500,13 @@ export async function redeemBackerAccessCode(
   }
 
   if (!data?.ok) {
+    const isInvalidCode = data?.error === "invalid_code" || data?.error === "code_already_used";
     return {
       ok: false,
-      error:
-        data?.error === "invalid_code"
-          ? "That code isn't valid or has already been used."
-          : "Couldn't redeem the code — please try again.",
+      errorCode: isInvalidCode ? "invalid_code" : "redeem_failed",
+      error: isInvalidCode
+        ? "That code isn't valid or has already been used."
+        : "Couldn't redeem the code — please try again.",
     };
   }
 

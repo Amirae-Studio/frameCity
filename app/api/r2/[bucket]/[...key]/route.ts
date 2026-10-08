@@ -19,13 +19,29 @@ export async function GET(
     return new NextResponse("Not found", { status: 404 });
   }
 
-  // Only authenticated users can stream 3D models for preview & viewport rendering.
+  // All model requests require an authenticated session.
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) {
     return new NextResponse("Unauthorized", { status: 401 });
+  }
+
+  // preview/ keys are lower-quality decimated copies — any signed-in user can
+  // fetch them for the viewport. Full STL/GLB keys are paid content and
+  // require has_access=true on the user's profile.
+  const isPreview = objectKey.startsWith("preview/");
+  if (!isPreview) {
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("has_access")
+      .eq("id", user.id)
+      .single();
+
+    if (!profile?.has_access) {
+      return new NextResponse("no_access", { status: 403 });
+    }
   }
 
   try {

@@ -207,15 +207,11 @@ export function StudioConfigurator({
     const res = await recordDownload(city.slug, location.slug);
     if (!res.ok) {
       setExportingAs(null);
-      if (res.isTempAccess) {
+      if (res.errorCode === "temp_access" || res.isTempAccess) {
         setTempAccessModalOpen(true);
-      } else if (res.error === "limit_reached" || res.remaining === 0) {
+      } else if (res.errorCode === "limit_reached" || res.remaining === 0) {
         setDownloadLimitModal(true);
-      } else if (
-        res.error?.includes("unlock access") ||
-        res.error?.includes("valid code") ||
-        res.error === "Not authenticated"
-      ) {
+      } else if (res.errorCode === "no_access" || res.errorCode === "not_authenticated") {
         setBackerCrowdfundModalOpen(true);
       } else {
         alert(res.error || "Failed to process download quota.");

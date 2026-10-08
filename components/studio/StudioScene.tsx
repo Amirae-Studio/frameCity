@@ -228,6 +228,25 @@ function CityAssembly({
             m.userData.partName = file.partName || file.name;
             m.userData.isSubPart = !!file.isSubPart;
             m.userData.colorHint = file.colorHint;
+
+            // Preview GLBs were converted from Z-up STL files.
+            // Apply the same corrections as raw STLs: rotate geometry
+            // -90° around X (Z-up → Y-up) and reset to a neutral material
+            // so the layer colour system works identically for paid users.
+            if (file.isPreview) {
+              if (m.geometry && m.geometry.attributes.position) {
+                m.geometry = m.geometry.clone();
+                m.geometry.rotateX(-Math.PI / 2);
+                m.geometry.computeVertexNormals();
+                m.geometry.computeBoundingBox();
+              }
+              m.material = new THREE.MeshStandardMaterial({
+                color: "#e9e6df",
+                roughness: 0.6,
+                metalness: 0.05,
+              });
+            }
+
             if (m.geometry && m.geometry.attributes.position) {
               m.userData.origPosition = m.geometry.attributes.position.array.slice();
             }
