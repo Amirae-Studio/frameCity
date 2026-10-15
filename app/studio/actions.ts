@@ -645,3 +645,209 @@ export async function upgradeUserTier(
 
   return { ok: true, tier: newTier };
 }
+
+// ---------------------------------------------------------------------------
+// Patron Custom Model helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Check whether the current user has a folder in the `patron` R2 bucket.
+ * The folder name matches the username portion of their email (before @).
+ * Returns { isPatron: boolean, username: string }.
+ */
+export async function checkPatronAccess(): Promise<{
+  isPatron: boolean;
+  username: string;
+}> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user?.email) return { isPatron: false, username: "" };
+
+  // 1. Get MakerWorld username from profiles table
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("makerworld_name")
+    .eq("id", user.id)
+    .single();
+
+  const candidates: string[] = [];
+
+  if (profile?.makerworld_name) {
+    candidates.push(profile.makerworld_name.trim().replace(/^@/, ""));
+  }
+
+  // Also fallback to email prefix if MakerWorld username not set
+  const emailPrefix = user.email.split("@")[0].trim();
+  if (emailPrefix && !candidates.includes(emailPrefix)) {
+    candidates.push(emailPrefix);
+  }
+
+  try {
+    // List top-level folders / objects from patron bucket
+    const objects = await listR2Objects(R2_BUCKET.patron, "", 500);
+    const existingPrefixes = new Set<string>();
+    for (const obj of objects) {
+      const slashIdx = obj.key.indexOf("/");
+      if (slashIdx !== -1) {
+        existingPrefixes.add(obj.key.slice(0, slashIdx).toLowerCase());
+      }
+    }
+
+    // Check if any candidate username matches a folder in R2 patron bucket
+    for (const cand of candidates) {
+      const lower = cand.toLowerCase();
+      if (existingPrefixes.has(lower)) {
+        // Find exact casing as stored in R2
+        const exactObj = objects.find(
+          (o) => o.key.slice(0, o.key.indexOf("/")).toLowerCase() === lower
+        );
+        const matchedName = exactObj
+          ? exactObj.key.slice(0, exactObj.key.indexOf("/"))
+          : cand;
+        return { isPatron: true, username: matchedName };
+      }
+
+      // Also try direct prefix query just in case there are > 500 objects
+      const directCheck = await listR2Objects(R2_BUCKET.patron, `${cand}/`, 1);
+      if (directCheck.length > 0) {
+        return { isPatron: true, username: cand };
+      }
+    }
+
+    return { isPatron: false, username: candidates[0] || emailPrefix };
+  } catch (err) {
+    console.error("[checkPatronAccess] Error checking patron bucket:", err);
+    return { isPatron: false, username: candidates[0] || emailPrefix };
+  }
+}
+
+/**
+ * List all model files inside a patron user's folder.
+ * Structure in patron bucket: <username>/<subfolder>/<files>.glb|stl
+ * Returns ModelFile[] identical in shape to getModelFiles().
+ */
+export async function getPatronModelFiles(username: string): Promise<ModelFile[]> {
+  if (!username) return [];
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user?.email) return [];
+
+  // Security: caller must match patron access
+  const access = await checkPatronAccess();
+  if (!access.isPatron && access.username.toLowerCase() !== username.toLowerCase()) {
+    return [];
+  }
+
+  const prefix = `${username}/`;
+  let objects: { key: string; size: number }[] = [];
+
+  try {
+    objects = await listR2Objects(R2_BUCKET.patron, prefix);
+  } catch (err) {
+    console.error(`[Patron] listR2Objects failed for "${R2_BUCKET.patron}/${prefix}":`, err);
+    return [];
+  }
+
+  const validObjects = objects.filter((o) => /\.(glb|stl)$/i.test(o.key));
+  if (!validObjects.length) return [];
+
+  return validObjects.map((obj) => {
+    const relativePath = obj.key.slice(prefix.length); // strip username/
+    const parts = relativePath.split("/");
+    const fileName = parts[parts.length - 1];
+    const baseName = fileName.replace(/\.(glb|stl)$/i, "");
+    const ext = fileName.split(".").pop()?.toLowerCase();
+
+    // Standard layer dictionary for normalization
+    const STANDARD_LAYERS = [
+      "main-building",
+      "small-building",
+      "terrain",
+      "roads",
+      "trees",
+      "grass",
+      "water",
+    ];
+
+    const normalizeLayer = (raw: string) => {
+      const clean = raw.toLowerCase().replace(/_/g, "-");
+      const matched = STANDARD_LAYERS.find(
+        (sl) => clean === sl || clean.replace(/-/g, "") === sl.replace(/-/g, "")
+      );
+      return matched || clean;
+    };
+
+    let layer = "model";
+    let isSubPart = false;
+    let partName = baseName;
+    let partKey = baseName;
+
+    // Check if filename itself contains standard layer name (e.g. mainbuilding.glb, terrain.stl)
+    const normalizedBase = normalizeLayer(baseName);
+    const isBaseStandard = STANDARD_LAYERS.includes(normalizedBase);
+
+    if (parts.length > 2) {
+      // e.g. <username>/<location>/<layer>/<part>.glb OR <username>/<location>/<layer>.glb
+      const parentFolder = parts[parts.length - 2];
+      const normalizedParent = normalizeLayer(parentFolder);
+
+      if (STANDARD_LAYERS.includes(normalizedParent)) {
+        // e.g. arun/liverpool/main-building/part1.glb
+        layer = normalizedParent;
+        isSubPart = true;
+        partName = baseName;
+        partKey = `${layer}/${partName}`;
+      } else if (isBaseStandard) {
+        // e.g. arun/liverpool/main-building.glb
+        layer = normalizedBase;
+        isSubPart = false;
+        partName = layer;
+        partKey = layer;
+      } else {
+        // Nested subfolder
+        layer = normalizedParent;
+        isSubPart = true;
+        partName = baseName;
+        partKey = `${layer}/${partName}`;
+      }
+    } else if (parts.length === 2) {
+      // e.g. arun/liverpool/main-building.glb OR arun/main-building/file.glb
+      if (isBaseStandard) {
+        layer = normalizedBase;
+        isSubPart = false;
+        partName = layer;
+        partKey = layer;
+      } else {
+        const folderName = normalizeLayer(parts[0]);
+        layer = folderName;
+        isSubPart = STANDARD_LAYERS.includes(folderName);
+        partName = baseName;
+        partKey = `${layer}/${partName}`;
+      }
+    } else {
+      // Root level inside username folder e.g. arun/main-building.glb
+      layer = isBaseStandard ? normalizedBase : "model";
+      partName = layer;
+      partKey = layer;
+    }
+
+    // Stream URL via the authenticated R2 API route
+    const streamUrl = `/api/r2/${R2_BUCKET.patron}/${obj.key}`;
+
+    return {
+      name: fileName,
+      url: streamUrl,
+      ext,
+      layer,
+      isSubPart,
+      partName,
+      partKey,
+      colorHint: inferColorFromName(fileName),
+    } satisfies ModelFile;
+  });
+}

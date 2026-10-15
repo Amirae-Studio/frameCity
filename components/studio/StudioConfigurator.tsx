@@ -16,7 +16,7 @@ import {
 import type { NavUser } from "@/lib/user";
 import { useTheme } from "@/lib/theme";
 import { ThemeToggle } from "@/components/ThemeToggle";
-import { getModelFiles, type ModelFile } from "@/app/studio/actions";
+import { getModelFiles, getPatronModelFiles, type ModelFile } from "@/app/studio/actions";
 import { recordDownload } from "@/app/actions/downloads";
 import { TempAccessModal } from "@/components/TempAccessModal";
 import { BackerCrowdfundModal } from "@/components/BackerCrowdfundModal";
@@ -57,12 +57,14 @@ export function StudioConfigurator({
   location,
   user,
   hasAccess = false,
+  patronUsername,
 }: {
-  type?: "city" | "building";
+  type?: "city" | "building" | "patron";
   city: { slug: string; name: string };
   location: { slug: string; name: string; area: string; coords: string };
   user: NavUser | null;
   hasAccess?: boolean;
+  patronUsername?: string;
 }) {
   const meshRef = useRef<THREE.Object3D | null>(null);
   const { mode: themeMode } = useTheme();
@@ -141,6 +143,22 @@ export function StudioConfigurator({
     setModelFiles([]);
     setCityCtl(CITY_DEFAULTS);
 
+    if (type === "patron") {
+      const username = patronUsername || location.slug || city.slug;
+      getPatronModelFiles(username)
+        .then((files) => {
+          if (cancelled) return;
+          setModelFiles(files);
+          setModelLoading(false);
+        })
+        .catch(() => {
+          if (!cancelled) setModelLoading(false);
+        });
+      return () => {
+        cancelled = true;
+      };
+    }
+
     const bucket = type === "building" ? "buildings" : "city-models";
 
     // Prefix format for R2 bucket queries (e.g. paris/tour-eiffel)
@@ -158,7 +176,7 @@ export function StudioConfigurator({
     return () => {
       cancelled = true;
     };
-  }, [city.slug, location.slug, type]);
+  }, [city.slug, location.slug, type, patronUsername]);
 
 
   const syncFromMesh = useCallback((mesh: THREE.Object3D) => {

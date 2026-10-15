@@ -19,11 +19,15 @@ export function StudioPicker({
   initialBuildings,
   hasAccess = false,
   email = "",
+  isPatron = false,
+  patronUsername = "",
 }: {
   initialCities?: StudioCity[];
   initialBuildings?: StudioBuilding[];
   hasAccess?: boolean;
   email?: string;
+  isPatron?: boolean;
+  patronUsername?: string;
 }) {
   const router = useRouter();
   const [cities, setCities] = useState<StudioCity[]>(initialCities || []);
@@ -133,6 +137,63 @@ export function StudioPicker({
         onClose={() => setConnectModalOpen(false)}
         email={email}
       />
+
+      {/* ✦ Custom Model — Patron-only glowing button */}
+      {isPatron && (
+        <a
+          href="/studio/configure?type=patron"
+          className="patron-custom-btn group mb-8 flex w-full items-center justify-between gap-4 rounded-2xl border px-6 py-4"
+          style={{
+            borderColor: "rgba(var(--accent-rgb, 139,92,246), 0.45)",
+            background:
+              "linear-gradient(135deg, rgba(var(--accent-rgb, 139,92,246),0.12) 0%, rgba(var(--accent-rgb, 139,92,246),0.04) 100%)",
+            backdropFilter: "blur(10px)",
+            boxShadow:
+              "0 0 0 1px rgba(var(--accent-rgb,139,92,246),0.15), 0 0 28px rgba(var(--accent-rgb,139,92,246),0.18), inset 0 1px 0 rgba(255,255,255,0.06)",
+          }}
+        >
+          <div className="flex items-center gap-3.5">
+            {/* Pulsing orb */}
+            <span className="relative flex h-9 w-9 shrink-0 items-center justify-center">
+              <span
+                className="absolute inline-flex h-full w-full animate-ping rounded-full opacity-30"
+                style={{ background: "var(--accent)" }}
+              />
+              <span
+                className="relative inline-flex h-7 w-7 items-center justify-center rounded-full"
+                style={{ background: "var(--accent)" }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                  <path
+                    d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 17l-6.2 4.3 2.4-7.4L2 9.4h7.6z"
+                    fill="white"
+                  />
+                </svg>
+              </span>
+            </span>
+            <div>
+              <div
+                className="font-mono text-[9px] font-bold uppercase tracking-[0.3em] mb-0.5"
+                style={{ color: "var(--accent)" }}
+              >
+                Patron exclusive
+              </div>
+              <div className="font-display text-[18px] font-medium text-cream leading-tight">
+                Custom Model
+              </div>
+              <div className="font-mono text-[11px] text-cream/50 mt-0.5">
+                Your personal 3D model — ready to configure &amp; export
+              </div>
+            </div>
+          </div>
+          <span
+            className="shrink-0 font-mono text-[13px] transition-transform duration-300 group-hover:translate-x-1"
+            style={{ color: "var(--accent)" }}
+          >
+            →
+          </span>
+        </a>
+      )}
 
       {/* View Only Mode Top Banner */}
       {/* {!hasAccess && (
