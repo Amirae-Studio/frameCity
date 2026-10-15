@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { fetchStudioCities, fetchStudioBuildings } from "@/app/studio/actions";
+import { fetchStudioCities, fetchStudioBuildings, checkPatronAccess } from "@/app/studio/actions";
 import { toNavUser } from "@/lib/user";
 import { StudioConfigurator } from "@/components/studio/StudioConfigurator";
 
@@ -28,6 +28,27 @@ export default async function ConfigurePage({
   const hasAccess = Boolean(profile?.has_access);
 
   const params = await searchParams;
+
+  if (params.type === "patron") {
+    const { isPatron, username } = await checkPatronAccess();
+    if (!isPatron) redirect("/studio");
+
+    return (
+      <StudioConfigurator
+        type="patron"
+        city={{ slug: username, name: username }}
+        location={{
+          slug: username,
+          name: "Custom Model",
+          area: "Patron Exclusive",
+          coords: "R2 Cloud Storage",
+        }}
+        user={toNavUser(user)}
+        hasAccess={true}
+        patronUsername={username}
+      />
+    );
+  }
 
   if (params.type === "building") {
     const dbBuildings = await fetchStudioBuildings();

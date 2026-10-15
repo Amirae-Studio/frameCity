@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 
 // Only the model buckets are served here — never let the URL pick an
 // arbitrary bucket the R2 token happens to have access to.
-const ALLOWED_BUCKETS = new Set<string>([R2_BUCKET.cityModels, R2_BUCKET.buildings]);
+const ALLOWED_BUCKETS = new Set<string>([R2_BUCKET.cityModels, R2_BUCKET.buildings, R2_BUCKET.patron]);
 const MODEL_EXTENSIONS = /\.(glb|stl)$/i;
 
 export async function GET(
@@ -26,6 +26,26 @@ export async function GET(
   } = await supabase.auth.getUser();
   if (!user) {
     return new NextResponse("Unauthorized", { status: 401 });
+  }
+
+  // For patron bucket: verify the requesting user owns the username prefix.
+  if (bucket === R2_BUCKET.patron) {
+    const requestedUsername = objectKey.split("/")[0]?.toLowerCase() ?? "";
+
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("makerworld_name")
+      .eq("id", user.id)
+      .single();
+
+    const mwName = profile?.makerworld_name?.trim()?.replace(/^@/, "")?.toLowerCase() ?? "";
+    const emailPrefix = user.email?.split("@")[0]?.toLowerCase() ?? "";
+
+    const isMatch = (mwName && mwName === requestedUsername) || (emailPrefix && emailPrefix === requestedUsername);
+
+    if (!isMatch) {
+      return new NextResponse("Forbidden", { status: 403 });
+    }
   }
 
   try {

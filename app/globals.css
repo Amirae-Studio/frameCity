@@ -265,3 +265,37 @@ body {
   color: #e5b229;
 }
 
+/* ── Patron Custom Model Button ── */
+@keyframes patron-glow-pulse {
+  0%, 100% {
+    box-shadow:
+      0 0 0 1px rgba(var(--accent-rgb), 0.15),
+      0 0 28px rgba(var(--accent-rgb), 0.18),
+      inset 0 1px 0 rgba(255,255,255,0.06);
+  }
+  50% {
+    box-shadow:
+      0 0 0 1px rgba(var(--accent-rgb), 0.35),
+      0 0 42px rgba(var(--accent-rgb), 0.30),
+      0 0 80px rgba(var(--accent-rgb), 0.08),
+      inset 0 1px 0 rgba(255,255,255,0.09);
+  }
+}
+
+.patron-custom-btn {
+  animation: patron-glow-pulse 3s ease-in-out infinite;
+  text-decoration: none;
+  display: flex;
+}
+
+.patron-custom-btn:hover {
+  animation: none;
+  box-shadow:
+    0 0 0 1px rgba(var(--accent-rgb), 0.5),
+    0 0 50px rgba(var(--accent-rgb), 0.35),
+    0 0 100px rgba(var(--accent-rgb), 0.12),
+    inset 0 1px 0 rgba(255,255,255,0.1) !important;
+  transform: translateY(-1px);
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
+}
+

@@ -24,6 +24,7 @@ export const R2_BUCKET = {
   gallery: process.env.R2_BUCKET_GALLERY ?? "gallery",
   cityModels: process.env.R2_BUCKET_CITY_MODELS ?? "city-models",
   buildings: process.env.R2_BUCKET_BUILDINGS ?? "buildings",
+  patron: process.env.R2_BUCKET_PATRON ?? "patron",
 } as const;
 
 // -- S3Client (singleton per process) -----------------------------------------

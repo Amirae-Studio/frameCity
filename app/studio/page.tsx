@@ -1,15 +1,14 @@
-import Link from "next/link";
+﻿import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { Logo } from "@/components/Logo";
-import { AccessGate } from "@/components/AccessGate";
 import { SignOutButton } from "@/components/SignOutButton";
 import { StudioPicker } from "@/components/studio/StudioPicker";
 
-import { fetchStudioCities, fetchStudioBuildings } from "@/app/studio/actions";
+import { fetchStudioCities, fetchStudioBuildings, checkPatronAccess } from "@/app/studio/actions";
 
 export const metadata = {
-  title: "The Studio — FrameCity",
+  title: "The Studio - FrameCity",
 };
 
 export default async function StudioPage() {
@@ -18,7 +17,7 @@ export default async function StudioPage() {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) redirect("/login?next=/studio"); // middleware backstop
+  if (!user) redirect("/login?next=/studio");
 
   const { data: profile } = await supabase
     .from("profiles")
@@ -30,6 +29,7 @@ export default async function StudioPage() {
   const hasAccess = Boolean(profile?.has_access);
   const cities = await fetchStudioCities();
   const buildings = await fetchStudioBuildings();
+  const { isPatron, username: patronUsername } = await checkPatronAccess();
 
   return (
     <div className="flex min-h-dvh flex-col bg-base">
@@ -51,6 +51,8 @@ export default async function StudioPage() {
           initialBuildings={buildings}
           hasAccess={hasAccess}
           email={email}
+          isPatron={isPatron}
+          patronUsername={patronUsername}
         />
       </main>
     </div>
