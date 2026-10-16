@@ -724,11 +724,52 @@ export async function checkPatronAccess(): Promise<{
 }
 
 /**
+ * List all subfolders inside a patron user's folder.
+ * e.g. for arun/ -> ["checking", "liverpool"]
+ */
+export async function getPatronSubfolders(username: string): Promise<string[]> {
+  if (!username) return [];
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user?.email) return [];
+
+  const access = await checkPatronAccess();
+  if (!access.isPatron && access.username.toLowerCase() !== username.toLowerCase()) {
+    return [];
+  }
+
+  const prefix = `${username}/`;
+  let objects: { key: string; size: number }[] = [];
+
+  try {
+    objects = await listR2Objects(R2_BUCKET.patron, prefix);
+  } catch (err) {
+    console.error(`[Patron] listR2Objects failed for "${R2_BUCKET.patron}/${prefix}":`, err);
+    return [];
+  }
+
+  const subfolders = new Set<string>();
+  for (const obj of objects) {
+    const rel = obj.key.slice(prefix.length);
+    const slashIdx = rel.indexOf("/");
+    if (slashIdx !== -1) {
+      const folderName = rel.slice(0, slashIdx).trim();
+      if (folderName) subfolders.add(folderName);
+    }
+  }
+
+  return Array.from(subfolders);
+}
+
+/**
  * List all model files inside a patron user's folder.
  * Structure in patron bucket: <username>/<subfolder>/<files>.glb|stl
  * Returns ModelFile[] identical in shape to getModelFiles().
  */
-export async function getPatronModelFiles(username: string): Promise<ModelFile[]> {
+export async function getPatronModelFiles(username: string, subfolder?: string): Promise<ModelFile[]> {
   if (!username) return [];
 
   const supabase = await createClient();
@@ -743,7 +784,7 @@ export async function getPatronModelFiles(username: string): Promise<ModelFile[]
     return [];
   }
 
-  const prefix = `${username}/`;
+  const prefix = subfolder ? `${username}/${subfolder}/` : `${username}/`;
   let objects: { key: string; size: number }[] = [];
 
   try {

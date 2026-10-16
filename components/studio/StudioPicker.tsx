@@ -4,11 +4,12 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import type { StudioCity, StudioBuilding } from "@/lib/studio";
-import { fetchStudioCities, fetchStudioBuildings } from "@/app/studio/actions";
+import { fetchStudioCities, fetchStudioBuildings, getPatronSubfolders } from "@/app/studio/actions";
 import { SpotlightCard } from "../ui/SpotlightCard";
 import { ShinyText } from "../ui/ShinyText"; // Kept for your other potential uses
 import { StepTimeline } from "../ui/StepLine";
 import { ConnectStudioModal } from "@/components/ConnectStudioModal";
+import { Folder } from "lucide-react";
 
 const ease = [0.22, 1, 0.36, 1] as const;
 
@@ -21,6 +22,7 @@ export function StudioPicker({
   email = "",
   isPatron = false,
   patronUsername = "",
+  initialPatronFolders = [],
 }: {
   initialCities?: StudioCity[];
   initialBuildings?: StudioBuilding[];
@@ -28,12 +30,15 @@ export function StudioPicker({
   email?: string;
   isPatron?: boolean;
   patronUsername?: string;
+  initialPatronFolders?: string[];
 }) {
   const router = useRouter();
   const [cities, setCities] = useState<StudioCity[]>(initialCities || []);
   const [buildings, setBuildings] = useState<StudioBuilding[]>(
     initialBuildings || []
   );
+  const [patronFolders, setPatronFolders] = useState<string[]>(initialPatronFolders);
+  const [viewingPatronFolders, setViewingPatronFolders] = useState(false);
 
   // Auto-open connect access modal if user has not unlocked studio access yet
   const [connectModalOpen, setConnectModalOpen] = useState(!hasAccess);
@@ -51,7 +56,10 @@ export function StudioPicker({
     if (!initialBuildings || initialBuildings.length === 0) {
       fetchStudioBuildings().then((res) => setBuildings(res));
     }
-  }, [initialCities, initialBuildings]);
+    if (isPatron && patronUsername && (!initialPatronFolders || initialPatronFolders.length === 0)) {
+      getPatronSubfolders(patronUsername).then((res) => setPatronFolders(res));
+    }
+  }, [initialCities, initialBuildings, isPatron, patronUsername, initialPatronFolders]);
 
   // Group cities by country
   const cityCountries = useMemo(() => {
@@ -139,10 +147,19 @@ export function StudioPicker({
       />
 
       {/* ✦ Custom Model — Patron-only glowing button */}
-      {isPatron && (
-        <a
-          href="/studio/configure?type=patron"
-          className="patron-custom-btn group mb-8 flex w-full items-center justify-between gap-4 rounded-2xl border px-6 py-4"
+      {isPatron && !viewingPatronFolders && (
+        <button
+          type="button"
+          onClick={() => {
+            if (patronFolders.length > 1) {
+              setViewingPatronFolders(true);
+            } else if (patronFolders.length === 1) {
+              router.push(`/studio/configure?type=patron&location=${encodeURIComponent(patronFolders[0])}`);
+            } else {
+              router.push("/studio/configure?type=patron");
+            }
+          }}
+          className="patron-custom-btn group mb-8 flex w-full items-center justify-between gap-4 rounded-2xl border px-6 py-4 cursor-pointer text-left"
           style={{
             borderColor: "rgba(var(--accent-rgb, 139,92,246), 0.45)",
             background:
@@ -182,7 +199,9 @@ export function StudioPicker({
                 Custom Model
               </div>
               <div className="font-mono text-[11px] text-cream/50 mt-0.5">
-                Your personal 3D model — ready to configure &amp; export
+                {patronFolders.length > 1
+                  ? `${patronFolders.length} models available — click to choose`
+                  : "Your personal 3D model — ready to configure & export"}
               </div>
             </div>
           </div>
@@ -192,7 +211,7 @@ export function StudioPicker({
           >
             →
           </span>
-        </a>
+        </button>
       )}
 
       {/* View Only Mode Top Banner */}
@@ -214,7 +233,65 @@ export function StudioPicker({
       )} */}
 
       <AnimatePresence mode="wait">
-        {!selectedCountry ? (
+        {viewingPatronFolders ? (
+          /* ---------------------------------- PATRON FOLDERS VIEW */
+          <motion.div
+            key="step-patron-folders"
+            initial={{ opacity: 0, y: 18 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -14 }}
+            transition={{ duration: 0.4, ease }}
+          >
+            <button
+              onClick={() => setViewingPatronFolders(false)}
+              className="mb-7 flex items-center gap-2 font-mono text-[10.5px] uppercase tracking-[0.2em] text-cream/50 transition-colors hover:text-cream cursor-pointer"
+            >
+              <span aria-hidden>←</span> Back to studio
+            </button>
+
+            <StepTimeline steps={["Patron", "Custom model", "Studio"]} currentStep={2} />
+            <h1 className="m-0 mb-3 font-display text-[40px] font-normal leading-[1.03] md:text-[52px]">
+              Custom Models. <span className="italic">Choose your project.</span>
+            </h1>
+           
+
+            <div className="grid grid-cols-1 gap-[14px] sm:grid-cols-2 md:grid-cols-3">
+              {patronFolders.map((folderName) => (
+                <SpotlightCard
+                  key={folderName}
+                  className="p-6 transition-all duration-300 cursor-pointer"
+                  onClick={() => {
+                    router.push(
+                      `/studio/configure?type=patron&location=${encodeURIComponent(folderName)}`
+                    );
+                  }}
+                >
+                  <div className="flex items-center gap-3 mb-2">
+                    <span
+                      className="flex h-8 w-8 items-center justify-center rounded-xl"
+                      style={{ background: "rgba(var(--accent-rgb, 139,92,246), 0.15)", color: "var(--accent)" }}
+                    >
+                      <Folder className="h-4 w-4" />
+                    </span>
+                    <div className="font-display text-[22px] font-medium capitalize">
+                      {folderName}
+                    </div>
+                  </div>
+                  <div className="mt-3 font-mono text-[10.5px] uppercase tracking-[0.16em] text-cream/45 flex items-center justify-between">
+                    <span>Ready to configure</span>
+                    <span
+                      className="inline-block transition-transform duration-300 group-hover:translate-x-1"
+                      style={{ color: "var(--accent)" }}
+                      aria-hidden
+                    >
+                      →
+                    </span>
+                  </div>
+                </SpotlightCard>
+              ))}
+            </div>
+          </motion.div>
+        ) : !selectedCountry ? (
           /* ---------------------------------- STEP 01: COUNTRY SELECTION */
           <motion.div
             key="step-countries"

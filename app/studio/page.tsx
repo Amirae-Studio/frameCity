@@ -1,11 +1,11 @@
-﻿import Link from "next/link";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { Logo } from "@/components/Logo";
 import { SignOutButton } from "@/components/SignOutButton";
 import { StudioPicker } from "@/components/studio/StudioPicker";
 
-import { fetchStudioCities, fetchStudioBuildings, checkPatronAccess } from "@/app/studio/actions";
+import { fetchStudioCities, fetchStudioBuildings, checkPatronAccess, getPatronSubfolders } from "@/app/studio/actions";
 
 export const metadata = {
   title: "The Studio - FrameCity",
@@ -30,6 +30,7 @@ export default async function StudioPage() {
   const cities = await fetchStudioCities();
   const buildings = await fetchStudioBuildings();
   const { isPatron, username: patronUsername } = await checkPatronAccess();
+  const patronFolders = isPatron && patronUsername ? await getPatronSubfolders(patronUsername) : [];
 
   return (
     <div className="flex min-h-dvh flex-col bg-base">
@@ -53,6 +54,7 @@ export default async function StudioPage() {
           email={email}
           isPatron={isPatron}
           patronUsername={patronUsername}
+          initialPatronFolders={patronFolders}
         />
       </main>
     </div>

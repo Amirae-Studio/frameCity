@@ -33,13 +33,16 @@ export default async function ConfigurePage({
     const { isPatron, username } = await checkPatronAccess();
     if (!isPatron) redirect("/studio");
 
+    const folder = params.location || "";
+    const folderDisplayName = folder ? folder.charAt(0).toUpperCase() + folder.slice(1) : "Custom Model";
+
     return (
       <StudioConfigurator
         type="patron"
         city={{ slug: username, name: username }}
         location={{
-          slug: username,
-          name: "Custom Model",
+          slug: folder || username,
+          name: folderDisplayName,
           area: "Patron Exclusive",
           coords: "R2 Cloud Storage",
         }}

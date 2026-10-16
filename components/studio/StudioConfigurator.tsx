@@ -144,8 +144,9 @@ export function StudioConfigurator({
     setCityCtl(CITY_DEFAULTS);
 
     if (type === "patron") {
-      const username = patronUsername || location.slug || city.slug;
-      getPatronModelFiles(username)
+      const username = patronUsername || city.slug;
+      const subfolder = location.slug && location.slug !== username ? location.slug : undefined;
+      getPatronModelFiles(username, subfolder)
         .then((files) => {
           if (cancelled) return;
           setModelFiles(files);
