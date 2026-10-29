@@ -9,7 +9,7 @@ import { SpotlightCard } from "../ui/SpotlightCard";
 import { ShinyText } from "../ui/ShinyText"; // Kept for your other potential uses
 import { StepTimeline } from "../ui/StepLine";
 import { ConnectStudioModal } from "@/components/ConnectStudioModal";
-import { Folder } from "lucide-react";
+import { Folder, Globe2 } from "lucide-react";
 
 const ease = [0.22, 1, 0.36, 1] as const;
 
@@ -202,6 +202,41 @@ export function StudioPicker({
                 {patronFolders.length > 1
                   ? `${patronFolders.length} models available — click to choose`
                   : "Your personal 3D model — ready to configure & export"}
+              </div>
+            </div>
+          </div>
+          <span
+            className="shrink-0 font-mono text-[13px] transition-transform duration-300 group-hover:translate-x-1"
+            style={{ color: "var(--accent)" }}
+          >
+            →
+          </span>
+        </button>
+      )}
+
+      {/* ✦ Explore World — build a tile from any place on the map */}
+      {!viewingPatronFolders && (
+        <button
+          type="button"
+          onClick={() => router.push("/studio/explore")}
+          className="group mb-8 flex w-full items-center justify-between gap-4 rounded-2xl border border-cream/[0.16] bg-cream/[0.03] px-6 py-4 text-left transition-colors duration-300 hover:border-[var(--accent)]/60 hover:bg-[var(--accent)]/[0.06] cursor-pointer"
+        >
+          <div className="flex items-center gap-3.5">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-cream/20 text-[var(--accent)] transition-colors group-hover:border-[var(--accent)]">
+              <Globe2 size={17} />
+            </span>
+            <div>
+              <div
+                className="mb-0.5 font-mono text-[9px] font-bold uppercase tracking-[0.3em]"
+                style={{ color: "var(--accent)" }}
+              >
+                New · Any place on Earth
+              </div>
+              <div className="font-display text-[18px] font-medium leading-tight text-cream">
+                Explore World
+              </div>
+              <div className="mt-0.5 font-mono text-[11px] text-cream/50">
+                Search the satellite map, frame an area and turn it into a printable 3D tile
               </div>
             </div>
           </div>

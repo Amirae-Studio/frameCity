@@ -280,7 +280,7 @@ function CityAssembly({
     // Which axis is "up"? Flat layers (roads/terrain/grass) are thinnest
     // along it — robust whether the exports are Y-up or Z-up.
     let upAxis: Axis = "y";
-    const flat = ["roads", "terrain", "grass", "water"]
+    const flat = ["terrain", "roads", "grass", "water"]
       .map((n) => object.getObjectByName(n))
       .find(Boolean);
     if (flat) {
@@ -423,6 +423,33 @@ function CityAssembly({
       const layer = object.getObjectByName(name);
       const info = layerInfo.get(name);
       if (!layer || !info || name === "terrain" || name === "water") return;
+
+      // Generated (Explore World) layers carry a per-vertex `_anchor`: every
+      // building / tree / road scales about its own ground point, so resized
+      // objects stay on the terrain instead of the layer stretching from its
+      // lowest point (which lifts everything standing on a hill).
+      const anchored: THREE.Mesh[] = [];
+      layer.traverse((o) => {
+        const m = o as THREE.Mesh;
+        if (m.isMesh && m.geometry?.attributes._anchor && m.userData.origPosition) anchored.push(m);
+      });
+      if (anchored.length) {
+        layer.scale.set(1, 1, 1);
+        layer.position.set(0, 0, 0);
+        const s = AXES.map((a) => (a === upAxis ? vert : 1) * all);
+        for (const m of anchored) {
+          const posAttr = m.geometry.attributes.position as THREE.BufferAttribute;
+          const out = posAttr.array as Float32Array;
+          const orig = m.userData.origPosition as Float32Array;
+          const anc = (m.geometry.attributes._anchor as THREE.BufferAttribute).array as Float32Array;
+          for (let i = 0; i < out.length; i++) out[i] = anc[i] + (orig[i] - anc[i]) * s[i % 3];
+          posAttr.needsUpdate = true;
+          m.geometry.computeBoundingBox();
+          m.geometry.computeBoundingSphere();
+        }
+        return;
+      }
+
       AXES.forEach((a) => {
         const s = (a === upAxis ? vert : 1) * all;
         const anchor = a === upAxis ? info.min[a] : info.center[a];

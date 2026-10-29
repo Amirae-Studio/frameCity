@@ -58,13 +58,21 @@ export function StudioConfigurator({
   user,
   hasAccess = false,
   patronUsername,
+  customFiles,
+  initialControls,
+  onBack,
 }: {
-  type?: "city" | "building" | "patron";
+  type?: "city" | "building" | "patron" | "explore";
   city: { slug: string; name: string };
   location: { slug: string; name: string; area: string; coords: string };
   user: NavUser | null;
   hasAccess?: boolean;
   patronUsername?: string;
+  /** Pre-built layers (Explore World) — skips fetching from R2. */
+  customFiles?: ModelFile[];
+  initialControls?: Partial<CityControls>;
+  /** Replaces the Back link (Explore World returns to its map). */
+  onBack?: () => void;
 }) {
   const meshRef = useRef<THREE.Object3D | null>(null);
   const { mode: themeMode } = useTheme();
@@ -141,7 +149,13 @@ export function StudioConfigurator({
     let cancelled = false;
     setModelLoading(true);
     setModelFiles([]);
-    setCityCtl(CITY_DEFAULTS);
+    setCityCtl({ ...CITY_DEFAULTS, ...initialControls });
+
+    if (customFiles) {
+      setModelFiles(customFiles);
+      setModelLoading(false);
+      return;
+    }
 
     if (type === "patron") {
       const username = patronUsername || city.slug;
@@ -177,7 +191,9 @@ export function StudioConfigurator({
     return () => {
       cancelled = true;
     };
-  }, [city.slug, location.slug, type, patronUsername]);
+    // initialControls is read once per model, alongside customFiles.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [city.slug, location.slug, type, patronUsername, customFiles]);
 
 
   const syncFromMesh = useCallback((mesh: THREE.Object3D) => {
@@ -488,13 +504,24 @@ export function StudioConfigurator({
       {/* Header */}
       <header className="sticky top-0 z-30 flex h-16 items-center justify-between gap-3 border-b border-cream/[0.09] bg-deep/70 px-4 backdrop-blur-xl md:px-6">
         <div className="flex min-w-0 items-center gap-4">
-          <Link
-            href="/studio"
-            className="flex shrink-0 items-center gap-2 rounded-full border border-cream/[0.16] px-4 py-2 text-[12.5px] text-cream/70 no-underline transition-colors hover:border-cream/40 hover:text-cream"
-          >
-            <span aria-hidden>←</span>
-            <span className="hidden sm:inline">Back</span>
-          </Link>
+          {onBack ? (
+            <button
+              type="button"
+              onClick={onBack}
+              className="flex shrink-0 items-center gap-2 rounded-full border border-cream/[0.16] px-4 py-2 text-[12.5px] text-cream/70 transition-colors hover:border-cream/40 hover:text-cream"
+            >
+              <span aria-hidden>←</span>
+              <span className="hidden sm:inline">Map</span>
+            </button>
+          ) : (
+            <Link
+              href="/studio"
+              className="flex shrink-0 items-center gap-2 rounded-full border border-cream/[0.16] px-4 py-2 text-[12.5px] text-cream/70 no-underline transition-colors hover:border-cream/40 hover:text-cream"
+            >
+              <span aria-hidden>←</span>
+              <span className="hidden sm:inline">Back</span>
+            </Link>
+          )}
           <div className="min-w-0">
             <div
               className="font-mono text-[9px] font-bold uppercase tracking-[0.3em]"
