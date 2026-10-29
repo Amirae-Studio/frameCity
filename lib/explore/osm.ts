@@ -56,6 +56,9 @@ export type OsmData = {
   waterLines: OsmRoad[];
   /** True when buildings came from raw OSM (roof shapes, parts) rather than tiles. */
   detailed?: boolean;
+  /** Measured LOD2 building meshes from a government city model, when one covers the frame. */
+  meshBuildings?: import("./lod2").MeshBuilding[];
+  lod2?: import("./lod2").Lod2Source;
 };
 
 const OVERPASS_ENDPOINTS = [
@@ -435,6 +438,13 @@ export async function fetchMapData(shape: FrameShape, signal?: AbortSignal): Pro
   const bb = `(${s},${w},${n},${e})`;
   const treesQuery = `[out:json][timeout:20];(node["natural"="tree"]${bb};way["natural"="tree_row"]${bb};);out geom qt;`;
   const trees = fetchOverpass(treesQuery, signal, 8000).catch(() => null);
+  const lod2 = import("./lod2")
+    .then(({ fetchLod2 }) => fetchLod2(shape, signal))
+    .catch((err) => {
+      if (signal?.aborted) throw err;
+      console.warn("[explore] LOD2 city model unavailable, using OSM buildings", err);
+      return null;
+    });
   const detailed = import("./overture")
     .then(({ fetchOvertureBuildings }) => fetchOvertureBuildings(shape, signal))
     .catch((err) => {
@@ -459,6 +469,21 @@ export async function fetchMapData(shape: FrameShape, signal?: AbortSignal): Pro
     data.buildings = buildings;
     data.detailed = true;
   }
+  // Government LOD2 models win where they have a building; OSM fills the gaps
+  // (buildings newer than the survey, or areas the model doesn't cover).
+  const city = await lod2;
+  if (city) {
+    data.buildings = data.buildings.filter((b) => !city.covers(centroid(b.outer)));
+    for (const edge of city.edges) {
+      for (const c of clipArea(edge, clip)) {
+        data.buildings.push({ ...c, height: edge.height, minHeight: 0, footprint: Math.abs(signedArea(c.outer)) });
+      }
+    }
+    data.meshBuildings = city.meshes;
+    data.lod2 = city.source;
+    groundFloating(data.buildings); // a removed base may have held up a kept part
+  }
+
   const treeEls = await trees;
   if (treeEls) {
     const extra = parseElements(treeEls, shape.center, clip);

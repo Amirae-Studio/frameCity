@@ -22,6 +22,7 @@ import {
 } from "./geo";
 import type { Area, OsmBuilding, OsmData, Roof, RoofShape } from "./osm";
 import type { HeightSampler } from "./elevation";
+import type { MeshBuilding } from "./lod2";
 import { intersection, type Pair } from "polygon-clipping";
 
 export type ExploreLayer =
@@ -576,7 +577,7 @@ function roofedSolid(m: TriMesh, b: OsmBuilding, bottom: number, top: number) {
   for (const ring of [b.outer, ...b.holes]) walls(m, cutRing(ring, f, lines), bottom, h);
 }
 
-function buildBuildings(list: OsmBuilding[], ctx: Ctx): THREE.BufferGeometry | null {
+function buildBuildings(list: OsmBuilding[], ctx: Ctx): TriMesh {
   const { H, mpm } = ctx;
   const minArea = (0.5 * mpm) ** 2;
   const sink = 0.4 * mpm;
@@ -619,8 +620,30 @@ function buildBuildings(list: OsmBuilding[], ctx: Ctx): THREE.BufferGeometry | n
     m.anchor = () => anchor;
     roofedSolid(m, b, bottom, top);
   });
-  return m.geometry();
+  return m;
 }
+
+/** Measured LOD2 meshes, set on the terrain like OSM buildings: the lowest
+ *  ground under the footprint, with the base pushed slightly into it. */
+function buildMeshBuildings(list: MeshBuilding[], ctx: Ctx, m: TriMesh) {
+  const { H, mpm } = ctx;
+  const sink = 0.4 * mpm;
+  const minArea = (0.5 * mpm) ** 2;
+  for (const b of list) {
+    if (b.footprint < minArea) continue;
+    const { minX, minY, maxX, maxY } = b.box;
+    let ground = Infinity;
+    const t = b.tris;
+    for (let i = 0; i < t.length; i += 3) if (t[i + 2] < 0.5) ground = Math.min(ground, H(t[i], t[i + 1]));
+    if (!Number.isFinite(ground)) ground = H((minX + maxX) / 2, (minY + maxY) / 2);
+    const anchor = P((minX + maxX) / 2, (minY + maxY) / 2, ground);
+    m.anchor = () => anchor;
+    const at = (i: number): V3 => P(t[i], t[i + 1], t[i + 2] < 0.3 ? ground - sink : ground + t[i + 2]);
+    for (let i = 0; i < t.length; i += 9) m.tri(at(i), at(i + 3), at(i + 6));
+  }
+}
+
+const isMainMesh = (b: MeshBuilding) => b.height >= 30 || b.footprint >= 4000;
 
 /* ── Trees ───────────────────────────────────────────────────────────── */
 
@@ -708,8 +731,10 @@ function buildTrees(points: Vec2[], ctx: Ctx, seed: number): THREE.BufferGeometr
 /* ── Public API ──────────────────────────────────────────────────────── */
 
 export function summarize(data: OsmData, shape: FrameShape, heights: HeightSampler): LayerSummary[] {
-  const main = data.buildings.filter(isMainBuilding).length;
-  const small = data.buildings.length - main;
+  const meshes = data.meshBuildings ?? [];
+  const mainMesh = meshes.filter(isMainMesh).length;
+  const main = data.buildings.filter(isMainBuilding).length + mainMesh;
+  const small = data.buildings.length + meshes.length - main;
   const roadKm = data.roads.reduce((s, r) => {
     let len = 0;
     for (let i = 1; i < r.line.length; i++) {
@@ -730,7 +755,13 @@ export function summarize(data: OsmData, shape: FrameShape, heights: HeightSampl
   ];
   // Tile buildings are footprints merged into blocks, so their count means little.
   const roofs = data.buildings.filter((b) => b.roof).length;
-  const note = data.detailed ? (roofs ? ` · ${roofs} shaped roofs` : "") : " · flat roofs (detail tiles unavailable)";
+  const note = data.lod2
+    ? ` · ${meshes.length} measured (${data.lod2.name})`
+    : data.detailed
+      ? roofs
+        ? ` · ${roofs} shaped roofs`
+        : ""
+      : " · flat roofs (detail tiles unavailable)";
   if (main) list.push({ key: "main-building", label: LAYER_LABELS["main-building"], count: main, detail: `${main} landmark / tall${data.detailed ? "" : " · simplified"}` });
   if (small) list.push({ key: "small-building", label: LAYER_LABELS["small-building"], count: small, detail: data.detailed ? `${small} buildings${note}` : `Building blocks${note}` });
   if (data.roads.length) list.push({ key: "roads", label: LAYER_LABELS.roads, count: data.roads.length, detail: `${roadKm.toFixed(1)} km` });
@@ -761,9 +792,14 @@ export async function buildExploreModel(
 
   onProgress?.("Raising buildings");
   await tick();
-  layers.push({ key: "main-building", geom: buildBuildings(data.buildings.filter(isMainBuilding), ctx) });
+  const meshes = data.meshBuildings ?? [];
+  const mainM = buildBuildings(data.buildings.filter(isMainBuilding), ctx);
+  buildMeshBuildings(meshes.filter(isMainMesh), ctx, mainM);
+  layers.push({ key: "main-building", geom: mainM.geometry() });
   await tick();
-  layers.push({ key: "small-building", geom: buildBuildings(data.buildings.filter((b) => !isMainBuilding(b)), ctx) });
+  const smallM = buildBuildings(data.buildings.filter((b) => !isMainBuilding(b)), ctx);
+  buildMeshBuildings(meshes.filter((b) => !isMainMesh(b)), ctx, smallM);
+  layers.push({ key: "small-building", geom: smallM.geometry() });
 
   onProgress?.("Laying roads");
   await tick();

@@ -387,6 +387,13 @@ function CustomizePanel({
           );
         })}
 
+        {scan.data.lod2 && (
+          <p className="m-0 rounded-xl border border-[var(--accent)]/30 bg-[var(--accent)]/[0.06] p-3 font-mono text-[10px] leading-[1.6] text-cream/60">
+            Measured LOD2 buildings from {scan.data.lod2.name} — {scan.data.lod2.attribution}. Gaps filled from
+            OpenStreetMap.
+          </p>
+        )}
+
         {onlyTerrain && (
           <p className="m-0 rounded-xl border border-cream/[0.1] p-3 font-mono text-[10px] leading-[1.6] text-cream/50">
             No buildings, roads or greenery are mapped here — you&apos;ll get the terrain only. Try moving the frame
