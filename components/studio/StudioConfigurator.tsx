@@ -26,6 +26,7 @@ import { exportTo3MF, collectTransformedMeshes } from "@/lib/3mfExporter";
 import Scrubber from "../ui/Scrubber";
 import { Box, Building2, Palette, PrinterIcon, Road, Shrub, SquareDimensions, TreePine } from "lucide-react";
 import SegmentedToggle from "../ui/Switch";
+import { TerrainModePicker, type TerrainChoice } from "@/components/explore/TerrainModePicker";
 
 
 const StudioScene = dynamic(() => import("./StudioScene"), {
@@ -61,6 +62,7 @@ export function StudioConfigurator({
   customFiles,
   initialControls,
   onBack,
+  terrainControl,
 }: {
   type?: "city" | "building" | "patron" | "explore";
   city: { slug: string; name: string };
@@ -73,6 +75,9 @@ export function StudioConfigurator({
   initialControls?: Partial<CityControls>;
   /** Replaces the Back link (Explore World returns to its map). */
   onBack?: () => void;
+  /** Explore World: smooth or flat ground. The parent
+   *  rebuilds the model and passes new customFiles; controls are kept. */
+  terrainControl?: TerrainChoice & { busy: boolean; onChange: (t: TerrainChoice) => void };
 }) {
   const meshRef = useRef<THREE.Object3D | null>(null);
   const { mode: themeMode } = useTheme();
@@ -145,17 +150,26 @@ export function StudioConfigurator({
     }
   }, [availableColorLayers, activeColorTab]);
 
+  // Controls reset only when a different model opens — not when Explore World
+  // rebuilds the same place (e.g. after a terrain change).
+  const modelKey = `${type}|${city.slug}|${location.slug}|${patronUsername ?? ""}`;
+  const loadedKey = useRef<string | null>(null);
+
   useEffect(() => {
     let cancelled = false;
-    setModelLoading(true);
-    setModelFiles([]);
-    setCityCtl({ ...CITY_DEFAULTS, ...initialControls });
+    const sameModel = loadedKey.current === modelKey;
+    loadedKey.current = modelKey;
+    if (!sameModel) setCityCtl({ ...CITY_DEFAULTS, ...initialControls });
 
     if (customFiles) {
+      // Swap straight to the rebuilt layers — no empty flash in between.
       setModelFiles(customFiles);
       setModelLoading(false);
       return;
     }
+
+    setModelLoading(true);
+    setModelFiles([]);
 
     if (type === "patron") {
       const username = patronUsername || city.slug;
@@ -856,6 +870,26 @@ export function StudioConfigurator({
                           />
                         )}
                         
+                        {terrainControl && (
+                          <div className="flex flex-col gap-3 rounded-xl border border-cream/[0.12] bg-cream/[0.03] p-3">
+                            <div className="flex items-center justify-between">
+                              <span className="font-mono text-[10px] font-bold uppercase tracking-[0.16em] text-cream/45">
+                                Terrain shape
+                              </span>
+                              {terrainControl.busy && (
+                                <span className="flex items-center gap-1.5 font-mono text-[9px] uppercase tracking-[0.14em] text-[var(--accent)]">
+                                  <span className="h-2.5 w-2.5 animate-spin rounded-full border border-cream/20 border-t-[var(--accent)]" />
+                                  Rebuilding
+                                </span>
+                              )}
+                            </div>
+                            <TerrainModePicker
+                              value={terrainControl}
+                              onChange={(t) => terrainControl.onChange(t)}
+                            />
+                          </div>
+                        )}
+
                         {layerSet.has("terrain") && (
                           <ResettableScrubber
                             label="Terrain height"

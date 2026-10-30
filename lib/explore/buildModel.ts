@@ -47,7 +47,7 @@ export const LAYER_LABELS: Record<ExploreLayer, string> = {
 export type LayerSummary = { key: ExploreLayer; label: string; count: number; detail: string };
 
 /** Target print width the min-feature sizes are tuned for. */
-const PRINT_MM = 200;
+export const PRINT_MM = 200;
 
 const isMainBuilding = (b: OsmBuilding) => b.main ?? (b.height >= 30 || b.footprint >= 4000);
 
@@ -820,6 +820,7 @@ export async function buildExploreModel(
   onProgress?.("Filling water");
   await tick();
   const water = new TriMesh();
+  water.anchor = (v) => [v[0], ctx.H(v[0], -v[2]), v[2]];
   for (const a of data.water) drapedArea(water, a, ctx, 0.35 * mpm, -0.5 * mpm);
   for (const l of data.waterLines) ribbon(water, l.line, Math.max(l.width, minRoad), ctx, 0.35 * mpm, -0.5 * mpm);
   layers.push({ key: "water", geom: water.geometry() });
@@ -846,6 +847,9 @@ export async function buildExploreModel(
       new THREE.MeshStandardMaterial({ color: "#e9e6df", roughness: 0.6, metalness: 0.05 })
     );
     mesh.name = key;
+    // Exported as glTF extras → userData in the Studio: the terrain's bottom is
+    // one flat plane, the only part that moves when the base is thickened.
+    if (key === "terrain") mesh.userData.flatBase = true;
     scene.add(mesh);
     const glb = (await exporter.parseAsync(scene, { binary: true })) as ArrayBuffer;
     geom.dispose();

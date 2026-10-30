@@ -14,8 +14,9 @@ import Scrubber from "@/components/ui/Scrubber";
 import { StudioConfigurator } from "@/components/studio/StudioConfigurator";
 import { bounds, formatMeters, shapePolygon, type FrameShape } from "@/lib/explore/geo";
 import { fetchMapData, type OsmData } from "@/lib/explore/osm";
-import { loadHeights, type HeightSampler } from "@/lib/explore/elevation";
-import { buildExploreModel, summarize, type ExploreLayer, type LayerSummary } from "@/lib/explore/buildModel";
+import { loadHeights, shapeTerrain, type HeightSampler } from "@/lib/explore/elevation";
+import { TerrainModePicker, type TerrainChoice } from "./TerrainModePicker";
+import { buildExploreModel, PRINT_MM, summarize, type ExploreLayer, type LayerSummary } from "@/lib/explore/buildModel";
 
 const MapPicker = dynamic(() => import("./MapPicker").then((m) => m.MapPicker), {
   ssr: false,
@@ -32,8 +33,10 @@ type Scan = {
   shape: FrameShape;
   data: OsmData;
   heights: HeightSampler;
+  half: number; // metres the height grid covers around the centre
   layers: LayerSummary[];
 };
+
 
 const DEFAULT_SHAPE: FrameShape = {
   kind: "square",
@@ -66,8 +69,12 @@ export function ExploreWorld({ user, hasAccess }: { user: NavUser | null; hasAcc
   const [scan, setScan] = useState<Scan | null>(null);
   const [colors, setColors] = useState<Record<string, string>>({ ...DEFAULT_LAYER_COLORS });
   const [relief, setRelief] = useState(150);
+  const [terrain, setTerrain] = useState<TerrainChoice>({ mode: "smooth" });
+  const [rebuilding, setRebuilding] = useState(false);
   const [files, setFiles] = useState<ModelFile[] | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const buildId = useRef(0);
+  const rebuildTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const patchShape = useCallback((patch: Partial<FrameShape>) => setShape((s) => ({ ...s, ...patch })), []);
 
@@ -94,7 +101,7 @@ export function ExploreWorld({ user, hasAccess }: { user: NavUser | null; hasAcc
       ]);
       if (ctrl.signal.aborted) return;
       if (name) setPlaceName(name);
-      setScan({ shape: snapshot, data, heights, layers: summarize(data, snapshot, heights) });
+      setScan({ shape: snapshot, data, heights, half, layers: summarize(data, snapshot, heights) });
       setPhase("customize");
     } catch (err) {
       if (ctrl.signal.aborted) return;
@@ -104,11 +111,18 @@ export function ExploreWorld({ user, hasAccess }: { user: NavUser | null; hasAcc
     }
   }
 
+  function build(s: Scan, t: TerrainChoice, onProgress?: (label: string) => void) {
+    const ground = shapeTerrain(s.heights, t.mode, s.half, s.shape.size / PRINT_MM);
+    return buildExploreModel(s.shape, s.data, ground, { relief: relief / 100 }, onProgress);
+  }
+
   async function generate() {
     if (!scan) return;
+    const id = ++buildId.current;
     setPhase("building");
     try {
-      const out = await buildExploreModel(scan.shape, scan.data, scan.heights, { relief: relief / 100 }, setProgress);
+      const out = await build(scan, terrain, setProgress);
+      if (id !== buildId.current) return;
       setFiles(out);
       setPhase("studio");
     } catch (err) {
@@ -116,6 +130,26 @@ export function ExploreWorld({ user, hasAccess }: { user: NavUser | null; hasAcc
       setError("Something went wrong while building the 3D model. Try a smaller area.");
       setPhase("customize");
     }
+  }
+
+  /** Terrain changed inside the Studio: rebuild in place, keeping the user's
+   *  colours and sliders. Debounced so quick re-clicks build once. */
+  function changeTerrainInStudio(next: TerrainChoice) {
+    setTerrain(next);
+    if (!scan) return;
+    if (rebuildTimer.current) clearTimeout(rebuildTimer.current);
+    setRebuilding(true);
+    rebuildTimer.current = setTimeout(async () => {
+      const id = ++buildId.current;
+      try {
+        const out = await build(scan, next);
+        if (id === buildId.current) setFiles(out);
+      } catch (err) {
+        console.error(err);
+      } finally {
+        if (id === buildId.current) setRebuilding(false);
+      }
+    }, 450);
   }
 
   function cancelScan() {
@@ -146,6 +180,9 @@ export function ExploreWorld({ user, hasAccess }: { user: NavUser | null; hasAcc
           water: 100,
         }}
         onBack={() => setPhase("customize")}
+        terrainControl={
+          scan.heights.flat ? undefined : { ...terrain, busy: rebuilding, onChange: changeTerrainInStudio }
+        }
       />
     );
   }
@@ -247,6 +284,8 @@ export function ExploreWorld({ user, hasAccess }: { user: NavUser | null; hasAcc
               onColor={(k, hex) => setColors((c) => ({ ...c, [k]: hex }))}
               relief={relief}
               onRelief={setRelief}
+              terrain={terrain}
+              onTerrain={setTerrain}
               onBack={() => setPhase("map")}
               onGenerate={generate}
               canReopen={!!files}
@@ -288,6 +327,8 @@ function CustomizePanel({
   onColor,
   relief,
   onRelief,
+  terrain,
+  onTerrain,
   onBack,
   onGenerate,
   canReopen,
@@ -299,6 +340,8 @@ function CustomizePanel({
   onColor: (key: ExploreLayer, hex: string) => void;
   relief: number;
   onRelief: (v: number) => void;
+  terrain: TerrainChoice;
+  onTerrain: (t: TerrainChoice) => void;
   onBack: () => void;
   onGenerate: () => void;
   canReopen: boolean;
@@ -402,19 +445,31 @@ function CustomizePanel({
         )}
 
         {!scan.heights.flat && (
-          <div className="mt-1 rounded-xl border border-cream/[0.12] bg-cream/[0.03] p-3">
-            <Scrubber
-              label="Terrain relief (%)"
-              value={relief}
-              min={100}
-              max={400}
-              step={10}
-              decimals={0}
-              onValueChange={onRelief}
-            />
-            <p className="m-0 mt-1.5 font-mono text-[9.5px] uppercase tracking-[0.14em] text-cream/35">
-              Exaggerate hills so they show up in print
-            </p>
+          <div className="mt-1 flex flex-col gap-3 rounded-xl border border-cream/[0.12] bg-cream/[0.03] p-3">
+            <div>
+              <div className="mb-1.5 text-[13px]">Terrain shape</div>
+              <p className="m-0 mb-2 font-mono text-[9.5px] uppercase leading-[1.6] tracking-[0.14em] text-cream/40">
+                {Math.round(scan.heights.relief)} m of hills and slopes here — smooth clears small bumps and keeps
+                the slopes, flat levels the ground
+              </p>
+              <TerrainModePicker value={terrain} onChange={onTerrain} />
+            </div>
+            {terrain.mode !== "flat" && (
+              <div>
+                <Scrubber
+                  label="Terrain relief (%)"
+                  value={relief}
+                  min={100}
+                  max={400}
+                  step={10}
+                  decimals={0}
+                  onValueChange={onRelief}
+                />
+                <p className="m-0 mt-1.5 font-mono text-[9.5px] uppercase tracking-[0.14em] text-cream/35">
+                  Exaggerate hills so they show up in print
+                </p>
+              </div>
+            )}
           </div>
         )}
       </div>
