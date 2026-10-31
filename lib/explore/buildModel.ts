@@ -9,6 +9,7 @@ import { mergeGeometries, mergeVertices } from "three/examples/jsm/utils/BufferG
 import type { ModelFile } from "@/app/studio/actions";
 import {
   bounds,
+  centroid,
   clipPolygon,
   densify,
   insideFrame,
@@ -23,6 +24,7 @@ import {
 import type { Area, OsmBuilding, OsmData, Roof, RoofShape } from "./osm";
 import type { HeightSampler } from "./elevation";
 import type { MeshBuilding } from "./lod2";
+import type { TreeTemplate } from "./trees";
 import { intersection, type Pair } from "polygon-clipping";
 
 export type ExploreLayer =
@@ -50,6 +52,49 @@ export type LayerSummary = { key: ExploreLayer; label: string; count: number; de
 export const PRINT_MM = 200;
 
 const isMainBuilding = (b: OsmBuilding) => b.main ?? (b.height >= 30 || b.footprint >= 4000);
+
+/** Smallest building that prints as a clean block, in printed millimetres. */
+const MIN_BUILDING_MM = 1.6; // footprint side, as a square
+const MIN_BUILDING_WIDTH_MM = 1; // narrowest side: thinner walls print as wisps
+/** Buildings standing in water (houseboats, pier sheds) smaller than this go too. */
+const MIN_WATER_BUILDING_MM = 10;
+
+/**
+ * Buildings big enough to print. Drops tiny sheds, slivers and small
+ * structures out on the water. Parts of one landmark stay or go together,
+ * judged by the whole building, so a spire never loses its small pieces.
+ */
+function printableBuildings(data: OsmData, mpm: number): { osm: OsmBuilding[]; meshes: MeshBuilding[] } {
+  const minArea = (MIN_BUILDING_MM * mpm) ** 2;
+  const minWidth = MIN_BUILDING_WIDTH_MM * mpm;
+  const waterArea = (MIN_WATER_BUILDING_MM * mpm) ** 2;
+  const inWater = (p: Vec2) => data.water.some((w) => pointInRing(p, w.outer) && !w.holes.some((h) => pointInRing(p, h)));
+  const ok = (area: number, width: number, centre: Vec2) =>
+    area >= minArea && width >= minWidth && (area >= waterArea || !inWater(centre));
+
+  const groups = new Map<string, { area: number; width: number; centre: Vec2 }>();
+  for (const b of data.buildings) {
+    if (!b.group) continue;
+    const g = groups.get(b.group);
+    // Width of a footprint ≈ 2·area / perimeter (exact for long thin strips).
+    const width = (2 * b.footprint) / (perimeter(b.outer) || 1);
+    if (!g) groups.set(b.group, { area: b.footprint, width, centre: centroid(b.outer) });
+    else {
+      g.area = Math.max(g.area, b.footprint);
+      g.width = Math.max(g.width, width);
+    }
+  }
+  const osm = data.buildings.filter((b) => {
+    const g = b.group ? groups.get(b.group)! : null;
+    if (g) return ok(g.area, g.width, g.centre);
+    return ok(b.footprint, (2 * b.footprint) / (perimeter(b.outer) || 1), centroid(b.outer));
+  });
+  const meshes = (data.meshBuildings ?? []).filter((b) => {
+    const { minX, minY, maxX, maxY } = b.box;
+    return ok(b.footprint, Math.min(maxX - minX, maxY - minY), [(minX + maxX) / 2, (minY + maxY) / 2]);
+  });
+  return { osm, meshes };
+}
 
 type V3 = [number, number, number];
 const P = (x: number, y: number, h: number): V3 => [x, h, -y];
@@ -579,7 +624,6 @@ function roofedSolid(m: TriMesh, b: OsmBuilding, bottom: number, top: number) {
 
 function buildBuildings(list: OsmBuilding[], ctx: Ctx): TriMesh {
   const { H, mpm } = ctx;
-  const minArea = (0.5 * mpm) ** 2;
   const sink = 0.4 * mpm;
   const m = new TriMesh();
 
@@ -604,7 +648,7 @@ function buildBuildings(list: OsmBuilding[], ctx: Ctx): TriMesh {
     }
     return s;
   };
-  const kept = list.filter((b) => b.footprint >= minArea);
+  const kept = list;
   const keys = kept.map((b, i) => b.group ?? `#${i}`);
   kept.forEach((b, i) => siteOf(b, keys[i]));
 
@@ -628,9 +672,7 @@ function buildBuildings(list: OsmBuilding[], ctx: Ctx): TriMesh {
 function buildMeshBuildings(list: MeshBuilding[], ctx: Ctx, m: TriMesh) {
   const { H, mpm } = ctx;
   const sink = 0.4 * mpm;
-  const minArea = (0.5 * mpm) ** 2;
   for (const b of list) {
-    if (b.footprint < minArea) continue;
     const { minX, minY, maxX, maxY } = b.box;
     let ground = Infinity;
     const t = b.tris;
@@ -647,94 +689,246 @@ const isMainMesh = (b: MeshBuilding) => b.height >= 30 || b.footprint >= 4000;
 
 /* ── Trees ───────────────────────────────────────────────────────────── */
 
+/** Printed tree height. Smaller trees print as blobs or snap off the plate. */
+export const TREE_PRINT_MM = 6;
 const MAX_TREES = 6000;
+/** Total triangles the tree layer may hold, so dense parks don't explode the file. */
+const TREE_TRI_BUDGET = 800_000;
 
-/** Every tree position the model will contain: single trees, rows, scattered forests. */
-export function planTrees(data: OsmData, shape: FrameShape): Vec2[] {
+/** What planning needs to know about the tree model: its crown radius
+ *  (fraction of height) and how many triangles one copy costs. */
+export type TreeSpec = { radius: number; triangles: number };
+
+/** The built-in cone tree, used until a model from R2 has loaded. */
+function coneTemplate(): THREE.BufferGeometry {
+  const crown = new THREE.ConeGeometry(0.34, 0.78, 7).translate(0, 0.22 + 0.39, 0);
+  const trunk = new THREE.CylinderGeometry(0.07, 0.09, 0.3, 5).translate(0, 0.1, 0);
+  const g = mergeGeometries([crown, trunk].map((x) => {
+    x.deleteAttribute("uv");
+    x.deleteAttribute("normal");
+    return x;
+  }))!;
+  g.computeVertexNormals();
+  return g;
+}
+const CONE_SPEC: TreeSpec = { radius: 0.34, triangles: 40 };
+
+const treeHeight = (mpm: number) => Math.max(8, TREE_PRINT_MM * mpm);
+
+/** Spatial index of what trees must keep clear of: buildings, roads, water. */
+function obstacles(data: OsmData, cellSize: number) {
+  type Seg = { ax: number; ay: number; bx: number; by: number; pad: number };
+  type Poly = { area: Area; box: ReturnType<typeof bounds> };
+  const segs = new Map<string, Seg[]>();
+  const polys = new Map<string, Poly[]>();
+  const key = (ix: number, iy: number) => `${ix},${iy}`;
+  const cells = (minX: number, minY: number, maxX: number, maxY: number, fn: (k: string) => void) => {
+    for (let iy = Math.floor(minY / cellSize); iy <= Math.floor(maxY / cellSize); iy++)
+      for (let ix = Math.floor(minX / cellSize); ix <= Math.floor(maxX / cellSize); ix++) fn(key(ix, iy));
+  };
+  const addSeg = (a: Vec2, b: Vec2, pad: number) => {
+    const s = { ax: a[0], ay: a[1], bx: b[0], by: b[1], pad };
+    const r = pad + cellSize; // reach of the widest clearance we test with
+    cells(Math.min(a[0], b[0]) - r, Math.min(a[1], b[1]) - r, Math.max(a[0], b[0]) + r, Math.max(a[1], b[1]) + r, (k) => {
+      const l = segs.get(k);
+      if (l) l.push(s);
+      else segs.set(k, [s]);
+    });
+  };
+  const addPoly = (area: Area) => {
+    const box = bounds(area.outer);
+    const p = { area, box };
+    cells(box.minX, box.minY, box.maxX, box.maxY, (k) => {
+      const l = polys.get(k);
+      if (l) l.push(p);
+      else polys.set(k, [p]);
+    });
+    for (const ring of [area.outer, ...area.holes])
+      for (let i = 0; i < ring.length; i++) addSeg(ring[i], ring[(i + 1) % ring.length], 0);
+  };
+  for (const b of data.buildings) addPoly(b);
+  for (const b of data.meshBuildings ?? []) {
+    const { minX, minY, maxX, maxY } = b.box;
+    addPoly({ outer: [[minX, minY], [maxX, minY], [maxX, maxY], [minX, maxY]], holes: [] });
+  }
+  for (const a of data.water) addPoly(a);
+  for (const r of [...data.roads, ...data.waterLines])
+    for (let i = 1; i < r.line.length; i++) addSeg(r.line[i - 1], r.line[i], r.width / 2);
+
+  /** True when a crown of radius `clear` centred on p would touch an obstacle. */
+  return (p: Vec2, clear: number) => {
+    const k = key(Math.floor(p[0] / cellSize), Math.floor(p[1] / cellSize));
+    for (const { area, box } of polys.get(k) ?? []) {
+      if (p[0] < box.minX || p[0] > box.maxX || p[1] < box.minY || p[1] > box.maxY) continue;
+      if (pointInRing(p, area.outer) && !area.holes.some((h) => pointInRing(p, h))) return true;
+    }
+    for (const s of segs.get(k) ?? []) {
+      const dx = s.bx - s.ax, dy = s.by - s.ay;
+      const len2 = dx * dx + dy * dy || 1;
+      const t = Math.max(0, Math.min(1, ((p[0] - s.ax) * dx + (p[1] - s.ay) * dy) / len2));
+      if (Math.hypot(p[0] - s.ax - t * dx, p[1] - s.ay - t * dy) < s.pad + clear) return true;
+    }
+    return false;
+  };
+}
+
+/**
+ * Every tree position the model will contain: mapped single trees and rows,
+ * forests filled edge to edge, and open grass and parks planted in loose
+ * groves. Scattered trees keep clear of buildings, roads and water.
+ */
+export function planTrees(data: OsmData, shape: FrameShape, tree: TreeSpec = CONE_SPEC): Vec2[] {
   const mpm = shape.size / PRINT_MM;
   const clip = shapePolygon(shape);
-  const treeH = Math.max(9, 2.4 * mpm);
-  const margin = treeH * 0.35;
+  const treeH = treeHeight(mpm);
+  const r = tree.radius * treeH; // crown radius, metres
+  const maxTrees = Math.min(MAX_TREES, Math.floor(TREE_TRI_BUDGET / Math.max(1, tree.triangles)));
   const inFrame = (p: Vec2) =>
-    insideFrame([p[0] + margin, p[1]], clip) &&
-    insideFrame([p[0] - margin, p[1]], clip) &&
-    insideFrame([p[0], p[1] + margin], clip) &&
-    insideFrame([p[0], p[1] - margin], clip);
+    insideFrame([p[0] + r, p[1]], clip) &&
+    insideFrame([p[0] - r, p[1]], clip) &&
+    insideFrame([p[0], p[1] + r], clip) &&
+    insideFrame([p[0], p[1] - r], clip);
+  const blocked = obstacles(data, Math.max(20, r * 4));
 
-  const out: Vec2[] = data.trees.filter(inFrame);
-  let spacing = treeH * 0.6;
-  const forestArea = data.treeAreas.reduce((s, a) => {
-    const bb = bounds(a.outer);
-    return s + (bb.maxX - bb.minX) * (bb.maxY - bb.minY);
-  }, 0);
-  spacing = Math.max(spacing, Math.sqrt(forestArea / MAX_TREES));
+  // Occupancy grid: no two trees closer than `gap`, so crowns touch but
+  // never merge into one shapeless lump.
+  const gap = r * 1.15;
+  const taken = new Map<string, Vec2[]>();
+  const out: Vec2[] = [];
+  const place = (p: Vec2) => {
+    const ix = Math.floor(p[0] / gap), iy = Math.floor(p[1] / gap);
+    for (let y = iy - 1; y <= iy + 1; y++)
+      for (let x = ix - 1; x <= ix + 1; x++)
+        for (const q of taken.get(`${x},${y}`) ?? []) if (Math.hypot(p[0] - q[0], p[1] - q[1]) < gap) return false;
+    const k = `${ix},${iy}`;
+    const l = taken.get(k);
+    if (l) l.push(p);
+    else taken.set(k, [p]);
+    out.push(p);
+    return true;
+  };
 
-  for (const row of data.treeRows) {
-    for (const p of densify(row, spacing, false)) if (inFrame(p)) out.push(p);
+  // Mapped trees are real — keep every one that fits, only off rooftops.
+  const real: Vec2[] = [...data.trees];
+  for (const row of data.treeRows) real.push(...densify(row, gap, false));
+  for (const p of real) {
+    if (out.length >= maxTrees) return out;
+    if (inFrame(p) && !blocked(p, 0)) place(p);
   }
 
   const rnd = mulberry32(Math.round(shape.center[0] * 1e5) ^ Math.round(shape.center[1] * 1e5));
-  for (const a of data.treeAreas) {
-    const bb = bounds(a.outer);
-    for (let y = bb.minY + spacing / 2; y < bb.maxY; y += spacing) {
-      for (let x = bb.minX + spacing / 2; x < bb.maxX; x += spacing) {
-        const p: Vec2 = [x + (rnd() - 0.5) * spacing * 0.8, y + (rnd() - 0.5) * spacing * 0.8];
-        if (!pointInRing(p, a.outer) || a.holes.some((h) => pointInRing(p, h))) continue;
-        if (inFrame(p)) out.push(p);
-        if (out.length >= MAX_TREES) return out;
+  const areaOf = (list: Area[]) => list.reduce((s, a) => s + Math.abs(signedArea(a.outer)), 0);
+  const forests = new Set(data.treeAreas);
+  // Pitches and lawns too small for a proper tree stay open.
+  const lawns = data.grass.filter((a) => !forests.has(a) && !a.open && Math.abs(signedArea(a.outer)) > Math.PI * (r * 3) ** 2);
+  const left = () => maxTrees - out.length;
+
+  // Jittered grid over an area; spacing grows when the area would overflow the budget.
+  const scatter = (areas: Area[], spacing: number, keep: (p: Vec2) => boolean): Vec2[] => {
+    const pts: Vec2[] = [];
+    for (const a of areas) {
+      const bb = bounds(a.outer);
+      for (let y = bb.minY + spacing / 2; y < bb.maxY; y += spacing) {
+        for (let x = bb.minX + spacing / 2; x < bb.maxX; x += spacing) {
+          const p: Vec2 = [x + (rnd() - 0.5) * spacing * 0.8, y + (rnd() - 0.5) * spacing * 0.8];
+          if (!pointInRing(p, a.outer) || a.holes.some((h) => pointInRing(p, h))) continue;
+          if (keep(p) && inFrame(p) && !blocked(p, r * 0.6)) pts.push(p);
+        }
       }
     }
+    // Shuffle, so trimming to the budget thins evenly instead of dropping whole areas.
+    for (let i = pts.length - 1; i > 0; i--) {
+      const j = Math.floor(rnd() * (i + 1));
+      [pts[i], pts[j]] = [pts[j], pts[i]];
+    }
+    return pts;
+  };
+
+  const forestArea = areaOf([...forests]);
+  const lawnArea = areaOf(lawns);
+  // Forests are dense (crowns touching); parks get about a third of that, in groves.
+  const share = forestArea + lawnArea / 3 || 1;
+  const fit = (density: number) => Math.sqrt((forestArea * density + lawnArea * density / 3) / share);
+  // Slightly under-spaced: obstacles and the occupancy check reject some candidates.
+  const budgetSpacing = 0.8 * Math.sqrt(share / Math.max(1, left()));
+  const forestSpacing = Math.max(r * 1.9, budgetSpacing * fit(1) * 0.95);
+  const lawnSpacing = Math.max(r * 2, forestSpacing * 1.1);
+
+  for (const p of scatter([...forests], forestSpacing, () => true)) {
+    if (!left()) return out;
+    place(p);
   }
-  return out.slice(0, MAX_TREES);
+  // Low-frequency waves split lawns into groves and open meadow.
+  const phase = rnd() * 100;
+  const grove = (p: Vec2) => {
+    const w = r * 14;
+    const n = Math.sin(p[0] / w + phase) * Math.sin(p[1] / (w * 0.8) - phase) + 0.5 * Math.sin((p[0] + p[1]) / (w * 0.55));
+    return rnd() < 0.25 + 0.7 * Math.max(0, n + 0.3);
+  };
+  for (const p of scatter(lawns, lawnSpacing, grove)) {
+    if (!left()) return out;
+    place(p);
+  }
+  return out;
 }
 
-function buildTrees(points: Vec2[], ctx: Ctx, seed: number): THREE.BufferGeometry | null {
+function buildTrees(points: Vec2[], ctx: Ctx, seed: number, template?: THREE.BufferGeometry): THREE.BufferGeometry | null {
   if (!points.length) return null;
-  // One unit-tall low-poly tree: cone crown on a short trunk.
-  const crown = new THREE.ConeGeometry(0.34, 0.78, 7).translate(0, 0.22 + 0.39, 0);
-  const trunk = new THREE.CylinderGeometry(0.07, 0.09, 0.3, 5).translate(0, 0.1, 0);
-  const tpl = mergeGeometries([crown.toNonIndexed(), trunk.toNonIndexed()].map((g) => {
-    g.deleteAttribute("uv");
-    return g;
-  }))!;
-  const tp = tpl.getAttribute("position").array as Float32Array;
-  const tn = tpl.getAttribute("normal").array as Float32Array;
+  // Unit-tall tree, base at y = 0. Indexed, so every copy shares its welded vertices.
+  const tpl = template ?? coneTemplate();
+  const indexed = tpl.index ? tpl : mergeVertices(tpl, 1e-6);
+  const tp = indexed.getAttribute("position").array as ArrayLike<number>;
+  const tn = indexed.getAttribute("normal").array as ArrayLike<number>;
+  const ti = indexed.index!.array as ArrayLike<number>;
+  const nv = tp.length / 3;
 
-  const treeH = Math.max(9, 2.4 * ctx.mpm);
+  const treeH = treeHeight(ctx.mpm);
   const rnd = mulberry32(seed);
   const pos = new Float32Array(tp.length * points.length);
   const nrm = new Float32Array(tn.length * points.length);
   const anc = new Float32Array(tp.length * points.length);
+  const idx = new Uint32Array(ti.length * points.length);
   points.forEach(([x, y], i) => {
-    const s = treeH * (0.8 + rnd() * 0.45);
+    const s = treeH * (0.85 + rnd() * 0.3);
+    const a = rnd() * Math.PI * 2;
+    const c = Math.cos(a), sn = Math.sin(a);
     const h = ctx.H(x, y);
-    const ground = h - 0.08 * s;
+    // Sink the trunk a little so it stays planted on sloped ground.
+    const ground = h - 0.06 * s;
     const o = i * tp.length;
     for (let k = 0; k < tp.length; k += 3) {
-      pos[o + k] = x + tp[k] * s;
+      const vx = tp[k], vz = tp[k + 2];
+      pos[o + k] = x + (vx * c - vz * sn) * s;
       pos[o + k + 1] = ground + tp[k + 1] * s;
-      pos[o + k + 2] = -y + tp[k + 2] * s;
+      pos[o + k + 2] = -y + (vx * sn + vz * c) * s;
+      const nx = tn[k], nz = tn[k + 2];
+      nrm[o + k] = nx * c - nz * sn;
+      nrm[o + k + 1] = tn[k + 1];
+      nrm[o + k + 2] = nx * sn + nz * c;
       // Each tree grows from the ground under its trunk.
       anc[o + k] = x;
       anc[o + k + 1] = h;
       anc[o + k + 2] = -y;
     }
-    nrm.set(tn, o);
+    const io = i * ti.length, vo = i * nv;
+    for (let k = 0; k < ti.length; k++) idx[io + k] = ti[k] + vo;
   });
+  if (!template) tpl.dispose();
   const g = new THREE.BufferGeometry();
   g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
   g.setAttribute("normal", new THREE.BufferAttribute(nrm, 3));
   g.setAttribute("_anchor", new THREE.BufferAttribute(anc, 3));
+  g.setIndex(new THREE.BufferAttribute(idx, 1));
   return g;
 }
 
 /* ── Public API ──────────────────────────────────────────────────────── */
 
-export function summarize(data: OsmData, shape: FrameShape, heights: HeightSampler): LayerSummary[] {
-  const meshes = data.meshBuildings ?? [];
+export function summarize(data: OsmData, shape: FrameShape, heights: HeightSampler, tree?: TreeSpec): LayerSummary[] {
+  const { osm, meshes } = printableBuildings(data, shape.size / PRINT_MM);
   const mainMesh = meshes.filter(isMainMesh).length;
-  const main = data.buildings.filter(isMainBuilding).length + mainMesh;
-  const small = data.buildings.length + meshes.length - main;
+  const main = osm.filter(isMainBuilding).length + mainMesh;
+  const small = osm.length + meshes.length - main;
   const roadKm = data.roads.reduce((s, r) => {
     let len = 0;
     for (let i = 1; i < r.line.length; i++) {
@@ -742,7 +936,7 @@ export function summarize(data: OsmData, shape: FrameShape, heights: HeightSampl
     }
     return s + len;
   }, 0) / 1000;
-  const trees = planTrees(data, shape).length;
+  const trees = planTrees(data, shape, tree).length;
   const water = data.water.length + data.waterLines.length;
 
   const list: LayerSummary[] = [
@@ -754,7 +948,7 @@ export function summarize(data: OsmData, shape: FrameShape, heights: HeightSampl
     },
   ];
   // Tile buildings are footprints merged into blocks, so their count means little.
-  const roofs = data.buildings.filter((b) => b.roof).length;
+  const roofs = osm.filter((b) => b.roof).length;
   const note = data.lod2
     ? ` · ${meshes.length} measured (${data.lod2.name})`
     : data.detailed
@@ -779,7 +973,7 @@ export async function buildExploreModel(
   shape: FrameShape,
   data: OsmData,
   heights: HeightSampler,
-  opts: { relief: number },
+  opts: { relief: number; tree?: TreeTemplate },
   onProgress?: (label: string) => void
 ): Promise<ModelFile[]> {
   const ctx = makeCtx(shape, heights, opts.relief);
@@ -792,12 +986,12 @@ export async function buildExploreModel(
 
   onProgress?.("Raising buildings");
   await tick();
-  const meshes = data.meshBuildings ?? [];
-  const mainM = buildBuildings(data.buildings.filter(isMainBuilding), ctx);
+  const { osm, meshes } = printableBuildings(data, mpm);
+  const mainM = buildBuildings(osm.filter(isMainBuilding), ctx);
   buildMeshBuildings(meshes.filter(isMainMesh), ctx, mainM);
   layers.push({ key: "main-building", geom: mainM.geometry() });
   await tick();
-  const smallM = buildBuildings(data.buildings.filter((b) => !isMainBuilding(b)), ctx);
+  const smallM = buildBuildings(osm.filter((b) => !isMainBuilding(b)), ctx);
   buildMeshBuildings(meshes.filter((b) => !isMainMesh(b)), ctx, smallM);
   layers.push({ key: "small-building", geom: smallM.geometry() });
 
@@ -815,7 +1009,7 @@ export async function buildExploreModel(
   for (const a of data.grass) drapedArea(grass, a, ctx, 0.3 * mpm, -0.4 * mpm);
   layers.push({ key: "grass", geom: grass.geometry() });
   const seed = Math.round(shape.center[0] * 1e4) ^ Math.round(shape.center[1] * 1e4);
-  layers.push({ key: "trees", geom: buildTrees(planTrees(data, shape), ctx, seed) });
+  layers.push({ key: "trees", geom: buildTrees(planTrees(data, shape, opts.tree), ctx, seed, opts.tree?.geometry) });
 
   onProgress?.("Filling water");
   await tick();

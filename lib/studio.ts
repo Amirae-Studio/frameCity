@@ -35,15 +35,40 @@ export type Printer = {
   id: string;
   name: string;
   bed: [number, number, number];
+  /** Front-left corner the printer won't print in (X1 / P1 calibration area), mm. */
+  exclude?: [number, number];
 };
 
 export const printers: Printer[] = [
   { id: "a1-mini", name: "A1 mini", bed: [180, 180, 180] },
   { id: "a1", name: "A1", bed: [256, 256, 256] },
-  { id: "p1s", name: "P1S", bed: [256, 256, 256] },
-  { id: "x1c", name: "X1 Carbon", bed: [256, 256, 256] },
+  { id: "p1s", name: "P1S", bed: [256, 256, 256], exclude: [18, 28] },
+  { id: "x1c", name: "X1 Carbon", bed: [256, 256, 256], exclude: [18, 28] },
   { id: "h2d", name: "H2D", bed: [325, 320, 325] },
 ];
+
+/**
+ * Bed area an object of this footprint can use, keeping `margin` clear on
+ * each side. With a no-print corner the object must sit beside it or above
+ * it (the 3MF export slides it there), whichever leaves more room.
+ */
+export function usableBed(p: Printer, w: number, d: number, margin = 0): [number, number] {
+  const [bw, bd] = p.bed;
+  const full: [number, number] = [bw - 2 * margin, bd - 2 * margin];
+  if (!p.exclude) return full;
+  const [ex, ey] = p.exclude;
+  const clear = 5; // gap the exporter keeps from the corner, plus a millimetre
+  const beside: [number, number] = [bw - ex - clear - margin, bd - 2 * margin];
+  const above: [number, number] = [bw - 2 * margin, bd - ey - clear - margin];
+  const score = ([aw, ad]: [number, number]) => Math.min(aw / w, ad / d);
+  return score(beside) >= score(above) ? beside : above;
+}
+
+/** Largest uniform scale at which a w × d × h object still prints on this printer. */
+export function fitScale(p: Printer, w: number, d: number, h: number, margin = 0): number {
+  const [aw, ad] = usableBed(p, w, d, margin);
+  return Math.min(aw / w, ad / d, p.bed[2] / h);
+}
 
 // Scene scale: 1 three.js unit = 50 mm.
 export const MM = 1 / 50;

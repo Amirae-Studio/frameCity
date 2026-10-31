@@ -20,6 +20,16 @@ import { MM, DEFAULT_LAYER_COLORS, type CityControls } from "@/lib/studio";
 import type { ModelFile } from "@/app/studio/actions";
 
 export type GizmoMode = "translate" | "rotate" | "scale";
+// null hides the gizmo: size and placement are then set from the side panel.
+
+/** A printable frame shown around the model: geometry in mm, Z up, back at z = 0. */
+export type SceneFrame = {
+  geometry: THREE.BufferGeometry;
+  color: string;
+  position: [number, number, number];
+  /** Nameplate letters, a separate part in their own colour. */
+  text?: { geometry: THREE.BufferGeometry; color: string } | null;
+};
 
 function Bed({ w, d, light }: { w: number; d: number; light: boolean }) {
   // Grid every 20 mm, plus a brighter outer border.
@@ -83,7 +93,7 @@ function TransformTarget({
   onTransform,
   children,
 }: {
-  mode: GizmoMode;
+  mode: GizmoMode | null;
   position: [number, number, number];
   onTarget: (o: THREE.Object3D | null) => void;
   onTransform: (o: THREE.Object3D) => void;
@@ -107,7 +117,7 @@ function TransformTarget({
       <group ref={group} position={position}>
         {children}
       </group>
-      {obj && (
+      {obj && mode && (
         <TransformControls
           object={obj}
           mode={mode}
@@ -166,7 +176,7 @@ function CityAssembly({
   onTransform,
 }: {
   files: ModelFile[];
-  mode: GizmoMode;
+  mode: GizmoMode | null;
   controls: CityControls;
   onTarget: (o: THREE.Object3D | null) => void;
   onTransform: (o: THREE.Object3D) => void;
@@ -857,7 +867,7 @@ function PlaceholderTile({
   onTarget,
   onTransform,
 }: {
-  mode: GizmoMode;
+  mode: GizmoMode | null;
   onTarget: (o: THREE.Object3D | null) => void;
   onTransform: (o: THREE.Object3D) => void;
 }) {
@@ -914,10 +924,12 @@ export default function StudioScene({
   cityControls,
   onTarget,
   onTransform,
+  frame,
 }: {
+  frame?: SceneFrame | null;
   bedW: number;
   bedD: number;
-  mode: GizmoMode;
+  mode: GizmoMode | null;
   light: boolean;
   loading: boolean;
   files: ModelFile[];
@@ -944,6 +956,20 @@ export default function StudioScene({
       <directionalLight position={[0, 2, -8]} intensity={0.45} color="#e8d9c4" />
 
       <Bed w={bedW} d={bedD} light={light} />
+
+      {frame && (
+        // Z-up millimetres → Y-up scene units; the top rail ends up at the back.
+        <group position={frame.position} rotation={[-Math.PI / 2, 0, 0]} scale={MM}>
+          <mesh geometry={frame.geometry} castShadow receiveShadow>
+            <meshStandardMaterial color={frame.color} roughness={0.55} metalness={0.05} />
+          </mesh>
+          {frame.text && (
+            <mesh geometry={frame.text.geometry} castShadow>
+              <meshStandardMaterial color={frame.text.color} roughness={0.5} metalness={0.05} />
+            </mesh>
+          )}
+        </group>
+      )}
 
       {/* One render path — no placeholder→model swap. */}
       {loading ? (

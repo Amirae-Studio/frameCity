@@ -20,6 +20,7 @@ import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { zipSync, strToU8 } from "fflate";
 import { MM } from "./studio";
+import { loadBambuProfile, profileBed, projectSettings, type BambuProfile } from "./bambuProject";
 
 // ----- Types -----
 
@@ -214,7 +215,7 @@ export function cleanAndWeldGeometry(
  * millimeters (1 unit = 50 mm) without artificial dimension compression, centers
  * on build plate (128, 128 mm), aligns base to Z=0, and welds manifold geometry.
  */
-export function collectTransformedMeshes(root: THREE.Object3D): MeshEntry[] {
+export function collectTransformedMeshes(root: THREE.Object3D, plateCenter: [number, number] = [128, 128]): MeshEntry[] {
   root.updateWorldMatrix(true, true);
 
   // Conversion scale factor: 1 Three.js unit = 50 mm (1 / MM)
@@ -311,8 +312,8 @@ export function collectTransformedMeshes(root: THREE.Object3D): MeshEntry[] {
         // Exact millimeter positioning: 1 Three.js unit = 50 mm (no compression)
         // Center model at (128, 128) mm on Bambu 256x256mm build plate
         // Base flat on bed plate at Z = 0 mm
-        const x = (posAttr.getX(i) - cx) * MM_SCALE + 128;
-        const y = (posAttr.getY(i) - cy) * MM_SCALE + 128;
+        const x = (posAttr.getX(i) - cx) * MM_SCALE + plateCenter[0];
+        const y = (posAttr.getY(i) - cy) * MM_SCALE + plateCenter[1];
         const z = (posAttr.getZ(i) - minZ) * MM_SCALE;
         posAttr.setXYZ(i, x, y, z);
       }
@@ -352,229 +353,311 @@ export function collectTransformedMeshes(root: THREE.Object3D): MeshEntry[] {
   return entries;
 }
 
-// ----- 3MF XML builders -----
+// ----- 3MF writer (Bambu Studio project format) -----
+//
+// Bambu Studio only reads plates and per-part filaments from files that say
+// they come from Bambu Studio; anything else loads as bare geometry on one
+// plate in one colour. So the file follows its project layout: meshes inline,
+// one object per plate made of parts, the object placed by its build
+// transform, and Metadata/model_settings.config naming each part's filament
+// and each plate's objects.
 
-function buildModelXML(entries: MeshEntry[]): {
-  modelXML: string;
-  objectList: { id: number; name: string; extruder: number }[];
-} {
-  const colorSet = new Map<string, number>();
-  entries.forEach((e) => {
-    if (!colorSet.has(e.color)) colorSet.set(e.color, colorSet.size + 1);
-  });
+/** One printable object, alone on its own plate. Parts are in plate millimetres, Z up. */
+type PlateObject = {
+  name: string;
+  entries: MeshEntry[];
+  /** Where this plate starts in Bambu's plate grid, mm. */
+  origin: [number, number];
+  /** An empty middle (a frame's window), centred on the object, mm. */
+  opening?: [number, number];
+};
 
-  let materialsXML = "";
-  colorSet.forEach((id, hex) => {
-    materialsXML += '    <m:colorgroup id="' + id + '">\n';
-    materialsXML += '      <m:color color="' + hex + 'FF" />\n';
-    materialsXML += "    </m:colorgroup>\n";
-  });
+type Tower = { x: number; y: number; w: number };
 
-  let objectsXML = "";
-  const componentIds: number[] = [];
-  const objectList: { id: number; name: string; extruder: number }[] = [];
-
-  entries.forEach((entry, idx) => {
-    const objId = 100 + idx;
-    const matId = colorSet.get(entry.color)!;
-    componentIds.push(objId);
-
-    const geom = entry.geometry;
-    const posAttr = geom.attributes.position as THREE.BufferAttribute;
-    if (!posAttr) return;
-
-    let verticesXML = "";
-    const vCount = posAttr.count;
-    for (let i = 0; i < vCount; i++) {
-      const x = posAttr.getX(i);
-      const y = posAttr.getY(i);
-      const z = posAttr.getZ(i);
-      verticesXML +=
-        '          <vertex x="' +
-        x.toFixed(4) +
-        '" y="' +
-        y.toFixed(4) +
-        '" z="' +
-        z.toFixed(4) +
-        '" />\n';
+/**
+ * Finds room for the prime tower Bambu adds to multi-colour plates: inside a
+ * frame's open window, else down the wider side margin, narrowed to fit.
+ * Bambu's default corner would land on top of a bed-sized model.
+ */
+function placeTower(
+  plate: PlateObject,
+  bed: [number, number],
+  width: number,
+  brim: number,
+  exclude: THREE.Box2 | null
+): Tower | null {
+  const box = new THREE.Box3();
+  plate.entries.forEach((e) => box.union(e.geometry.boundingBox!));
+  const [ox, oy] = plate.origin;
+  const x0 = box.min.x - ox, x1 = box.max.x - ox, y0 = box.min.y - oy, y1 = box.max.y - oy;
+  const pad = brim + 3;
+  if (plate.opening) {
+    const [w, d] = plate.opening;
+    const fit = Math.min(width, w - 2 * pad - 10);
+    if (fit >= 15 && d >= fit + 2 * pad + 10) {
+      return { x: (x0 + x1) / 2 - fit / 2, y: (y0 + y1) / 2 - Math.min(d / 2 - pad - 5, fit), w: fit };
     }
-
-    let trianglesXML = "";
-    const index = geom.index;
-    if (index) {
-      const count = index.count;
-      for (let i = 0; i < count; i += 3) {
-        const a = index.getX(i);
-        const b = index.getX(i + 1);
-        const c = index.getX(i + 2);
-        trianglesXML +=
-          '          <triangle v1="' +
-          a +
-          '" v2="' +
-          b +
-          '" v3="' +
-          c +
-          '" pid="' +
-          matId +
-          '" p1="0" />\n';
-      }
-    } else {
-      const count = posAttr.count;
-      for (let i = 0; i < count; i += 3) {
-        trianglesXML +=
-          '          <triangle v1="' +
-          i +
-          '" v2="' +
-          (i + 1) +
-          '" v3="' +
-          (i + 2) +
-          '" pid="' +
-          matId +
-          '" p1="0" />\n';
-      }
-    }
-
-    const layerName = entry.name
-      .replace(/-/g, " ")
-      .replace(/\b\w/g, (l) => l.toUpperCase());
-
-    objectList.push({
-      id: objId,
-      name: layerName,
-      extruder: matId,
-    });
-
-    objectsXML +=
-      '    <object id="' +
-      objId +
-      '" type="model" name="' +
-      layerName +
-      '" pid="' +
-      matId +
-      '" pindex="0">\n';
-    objectsXML += "      <mesh>\n";
-    objectsXML += "        <vertices>\n" + verticesXML + "        </vertices>\n";
-    objectsXML +=
-      "        <triangles>\n" + trianglesXML + "        </triangles>\n";
-    objectsXML += "      </mesh>\n";
-    objectsXML += "    </object>\n";
-  });
-
-  let componentsXML = "";
-  componentIds.forEach((id) => {
-    componentsXML += '      <component objectid="' + id + '" />\n';
-  });
-
-  const rootObjectId = 1;
-  objectsXML +=
-    '    <object id="' +
-    rootObjectId +
-    '" type="model" name="FrameCity Model">\n' +
-    "      <components>\n" +
-    componentsXML +
-    "      </components>\n" +
-    "    </object>\n";
-
-  const buildXML = '    <item objectid="' + rootObjectId + '" />\n';
-
-  const modelXML =
-    '<?xml version="1.0" encoding="UTF-8"?>\n' +
-    '<model unit="millimeter" xml:lang="en-US"\n' +
-    '  xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02"\n' +
-    '  xmlns:m="http://schemas.microsoft.com/3dmanufacturing/material/2015/02"\n' +
-    '  xmlns:bambu="http://schemas.bambulab.com/package/2021"\n' +
-    '  requiredextensions="m">\n' +
-    "  <resources>\n" +
-    materialsXML +
-    objectsXML +
-    "  </resources>\n" +
-    "  <build>\n" +
-    buildXML +
-    "  </build>\n" +
-    "</model>";
-
-  return { modelXML, objectList };
+  }
+  const left = x0, right = bed[0] - x1;
+  const room = Math.max(left, right) - 2 * pad;
+  if (room < 12) return null;
+  const w = Math.min(width, room);
+  const x = left >= right ? pad : bed[0] - pad - w;
+  // Start above the printer's no-print corner (e.g. the X1's calibration area).
+  let y = 20;
+  if (exclude && x < exclude.max.x + pad && x + w > exclude.min.x - pad) y = Math.max(y, exclude.max.y + pad + 5);
+  return { x, y, w };
 }
 
-function buildModelSettingsXML(
-  objectList: { id: number; name: string; extruder: number }[]
-): string {
-  let objectsConfig = '  <object id="1">\n    <metadata key="name" value="FrameCity Model"/>\n  </object>\n';
+/** Moves a plate's object just clear of the no-print area, if it overlaps and the bed has room. */
+function clearExclusion(plate: PlateObject, bed: [number, number], exclude: THREE.Box2) {
+  const gap = 4;
+  const box = new THREE.Box3();
+  plate.entries.forEach((e) => box.union(e.geometry.boundingBox!));
+  const [ox, oy] = plate.origin;
+  const x0 = box.min.x - ox, x1 = box.max.x - ox, y0 = box.min.y - oy, y1 = box.max.y - oy;
+  const hits = x0 < exclude.max.x + gap && x1 > exclude.min.x - gap && y0 < exclude.max.y + gap && y1 > exclude.min.y - gap;
+  if (!hits) return;
+  const dx = exclude.max.x + gap - x0, dy = exclude.max.y + gap - y0;
+  const canX = x1 + dx <= bed[0] - 1, canY = y1 + dy <= bed[1] - 1;
+  if (!canX && !canY) return;
+  const [tx, ty] = canX && (!canY || dx <= dy) ? [dx, 0] : [0, dy];
+  plate.entries.forEach((e) => {
+    e.geometry.translate(tx, ty, 0);
+    e.geometry.computeBoundingBox();
+  });
+}
 
-  objectList.forEach((obj) => {
-    objectsConfig +=
-      '  <object id="' +
-      obj.id +
-      '">\n' +
-      '    <metadata key="name" value="' +
-      obj.name +
-      '"/>\n' +
-      '    <metadata key="extruder" value="' +
-      obj.extruder +
-      '"/>\n' +
-      "  </object>\n";
+/** Bounding box of the printer's no-print area, from its profile. */
+function excludeBox(cfg: Record<string, unknown>): THREE.Box2 | null {
+  const pts = ((cfg.bed_exclude_area as string[] | undefined) ?? [])
+    .map((p) => p.split("x").map(Number))
+    .filter((p) => p.length === 2 && p.every(Number.isFinite));
+  if (pts.length < 3) return null;
+  const box = new THREE.Box2();
+  pts.forEach(([x, y]) => box.expandByPoint(new THREE.Vector2(x, y)));
+  return box.isEmpty() || box.getSize(new THREE.Vector2()).x === 0 ? null : box;
+}
+
+const BAMBU_VERSION = "02.08.02.60";
+
+const xmlAttr = (v: string) =>
+  v.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+const prettyName = (name: string) => name.replace(/-/g, " ").replace(/\b\w/g, (l) => l.toUpperCase());
+
+function meshXML(id: number, geom: THREE.BufferGeometry, offset: THREE.Vector3): string {
+  const pos = geom.attributes.position as THREE.BufferAttribute;
+  const out: string[] = ['  <object id="' + id + '" type="model">\n   <mesh>\n    <vertices>\n'];
+  for (let i = 0; i < pos.count; i++) {
+    out.push(
+      '     <vertex x="' + (pos.getX(i) - offset.x).toFixed(4) +
+        '" y="' + (pos.getY(i) - offset.y).toFixed(4) +
+        '" z="' + (pos.getZ(i) - offset.z).toFixed(4) + '"/>\n'
+    );
+  }
+  out.push("    </vertices>\n    <triangles>\n");
+  const index = geom.index;
+  const n = index ? index.count : pos.count;
+  for (let i = 0; i < n; i += 3) {
+    const a = index ? index.getX(i) : i;
+    const b = index ? index.getX(i + 1) : i + 1;
+    const c = index ? index.getX(i + 2) : i + 2;
+    out.push('     <triangle v1="' + a + '" v2="' + b + '" v3="' + c + '"/>\n');
+  }
+  out.push("    </triangles>\n   </mesh>\n  </object>\n");
+  return out.join("");
+}
+
+function buildBambuProject(plates: PlateObject[], profile: BambuProfile, bed: [number, number]) {
+  // One filament per distinct colour, numbered from 1 in order of use.
+  const filaments: string[] = [];
+  const filamentOf = (hex: string) => {
+    const c = hex.toUpperCase();
+    let i = filaments.indexOf(c);
+    if (i < 0) i = filaments.push(c) - 1;
+    return i + 1;
+  };
+
+  let nextId = 1;
+  const resources: string[] = [];
+  const items: string[] = [];
+  const objectsConfig: string[] = [];
+  const platesConfig: string[] = [];
+  const assemble: string[] = [];
+
+  plates.forEach((plate, pi) => {
+    // Meshes are stored relative to the object's base centre; the build
+    // transform puts the object back where it belongs on its plate.
+    const box = new THREE.Box3();
+    plate.entries.forEach((e) => {
+      e.geometry.computeBoundingBox();
+      box.union(e.geometry.boundingBox!);
+    });
+    const origin = new THREE.Vector3((box.min.x + box.max.x) / 2, (box.min.y + box.max.y) / 2, box.min.z);
+
+    const parts = plate.entries.map((e) => {
+      const id = nextId++;
+      resources.push(meshXML(id, e.geometry, origin));
+      return { id, name: prettyName(e.name), filament: filamentOf(e.color), faces: (e.geometry.index?.count ?? e.geometry.attributes.position.count) / 3 };
+    });
+
+    const objectId = nextId++;
+    resources.push(
+      '  <object id="' + objectId + '" type="model">\n   <components>\n' +
+        parts.map((p) => '    <component objectid="' + p.id + '" transform="1 0 0 0 1 0 0 0 1 0 0 0"/>\n').join("") +
+        "   </components>\n  </object>\n"
+    );
+    const t = "1 0 0 0 1 0 0 0 1 " + origin.x.toFixed(4) + " " + origin.y.toFixed(4) + " " + origin.z.toFixed(4);
+    items.push('  <item objectid="' + objectId + '" transform="' + t + '" printable="1"/>\n');
+
+    objectsConfig.push(
+      '  <object id="' + objectId + '">\n' +
+        '    <metadata key="name" value="' + xmlAttr(plate.name) + '"/>\n' +
+        '    <metadata key="extruder" value="' + parts[0].filament + '"/>\n' +
+        parts
+          .map(
+            (p) =>
+              '    <part id="' + p.id + '" subtype="normal_part">\n' +
+              '      <metadata key="name" value="' + xmlAttr(p.name) + '"/>\n' +
+              '      <metadata key="matrix" value="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1"/>\n' +
+              '      <metadata key="extruder" value="' + p.filament + '"/>\n' +
+              '      <mesh_stat face_count="' + p.faces + '" edges_fixed="0" degenerate_facets="0" facets_removed="0" facets_reversed="0" backwards_edges="0"/>\n' +
+              "    </part>\n"
+          )
+          .join("") +
+        "  </object>\n"
+    );
+    platesConfig.push(
+      "  <plate>\n" +
+        '    <metadata key="plater_id" value="' + (pi + 1) + '"/>\n' +
+        '    <metadata key="plater_name" value="' + xmlAttr(plate.name) + '"/>\n' +
+        '    <metadata key="locked" value="false"/>\n' +
+        "    <model_instance>\n" +
+        '      <metadata key="object_id" value="' + objectId + '"/>\n' +
+        '      <metadata key="instance_id" value="0"/>\n' +
+        '      <metadata key="identify_id" value="' + (1000 + pi) + '"/>\n' +
+        "    </model_instance>\n" +
+        "  </plate>\n"
+    );
+    assemble.push('   <assemble_item object_id="' + objectId + '" instance_id="0" transform="' + t + '" offset="0 0 0"/>\n');
   });
 
-  return (
-    '<?xml version="1.0" encoding="UTF-8"?>\n' +
-    "<config>\n" +
-    objectsConfig +
-    "  <plate>\n" +
-    '    <metadata key="plater_id" value="1"/>\n' +
-    '    <metadata key="plater_name" value=""/>\n' +
-    '    <metadata key="locked" value="false"/>\n' +
-    "  </plate>\n" +
-    "</config>"
+  const modelXML =
+    "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" +
+    '<model unit="millimeter" xml:lang="en-US" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02" xmlns:BambuStudio="http://schemas.bambulab.com/package/2021">\n' +
+    ' <metadata name="Application">BambuStudio-' + BAMBU_VERSION + "</metadata>\n" +
+    ' <metadata name="BambuStudio:3mfVersion">1</metadata>\n' +
+    ' <metadata name="Title">FrameCity</metadata>\n' +
+    " <resources>\n" + resources.join("") + " </resources>\n" +
+    " <build>\n" + items.join("") + " </build>\n" +
+    "</model>\n";
+
+  const settingsXML =
+    '<?xml version="1.0" encoding="UTF-8"?>\n<config>\n' +
+    objectsConfig.join("") +
+    platesConfig.join("") +
+    "  <assemble>\n" + assemble.join("") + "  </assemble>\n" +
+    "</config>\n";
+
+  // Prime tower spot per plate (only plates printing more than one filament need one).
+  const cfg = profile.config;
+  const width = Number(cfg.prime_tower_width) || 35;
+  const brim = Math.max(3, Number(cfg.prime_tower_brim_width) || 0);
+  const towers = plates.map((p) =>
+    new Set(p.entries.map((e) => e.color.toUpperCase())).size > 1 ? placeTower(p, bed, width, brim, excludeBox(cfg)) : null
   );
+  const defX = Number((cfg.wipe_tower_x as string[] | undefined)?.[0] ?? 15);
+  const defY = Number((cfg.wipe_tower_y as string[] | undefined)?.[0] ?? 220);
+  const projectJSON = projectSettings(profile, filaments, {
+    towerX: towers.map((t) => String(+(t?.x ?? defX).toFixed(2))),
+    towerY: towers.map((t) => String(+(t?.y ?? defY).toFixed(2))),
+    towerWidth: Math.min(width, ...towers.filter((t): t is Tower => !!t).map((t) => t.w)),
+  });
+
+  return { modelXML, settingsXML, projectJSON };
 }
 
 const RELS_XML =
   '<?xml version="1.0" encoding="UTF-8"?>\n' +
   '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">\n' +
-  '  <Relationship Id="rel0" Target="/3D/model.model" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel" />\n' +
-  '  <Relationship Id="rel1" Target="/Metadata/model_settings.config" Type="http://schemas.bambulab.com/bambustudio/2021/model_settings" />\n' +
-  '  <Relationship Id="rel2" Target="/Metadata/slice_info.config" Type="http://schemas.bambulab.com/bambustudio/2021/slice_info" />\n' +
-  "</Relationships>";
+  ' <Relationship Target="/3D/3dmodel.model" Id="rel-1" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/>\n' +
+  "</Relationships>\n";
 
 const CONTENT_TYPES_XML =
   '<?xml version="1.0" encoding="UTF-8"?>\n' +
   '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">\n' +
-  '  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml" />\n' +
-  '  <Default Extension="model" ContentType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml" />\n' +
-  '  <Default Extension="config" ContentType="application/vnd.bambulab.bambu-studio.config+xml" />\n' +
-  "</Types>";
+  ' <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>\n' +
+  ' <Default Extension="model" ContentType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml"/>\n' +
+  "</Types>\n";
 
-const SLICE_INFO_XML =
-  '<?xml version="1.0" encoding="UTF-8"?>\n' +
-  "<config>\n" +
-  "  <header>\n" +
-  '    <header_item key="header_info" value="created by BambuStudio 01.09.00.70"/>\n' +
-  "  </header>\n" +
-  "</config>";
+/** A part in millimetres, Z up, centred on XY with its base at z = 0. */
+export type PlatePart = { name: string; geometry: THREE.BufferGeometry; color: string };
+/** An object printed on its own plate; `parts` are extra pieces in other colours (e.g. frame text). */
+export type ExtraPlate = PlatePart & {
+  parts?: PlatePart[];
+  /** Open middle of the object (a frame's window), mm — room for the prime tower. */
+  opening?: [number, number];
+};
 
-export function exportTo3MF(root: THREE.Object3D): Blob {
-  const entries = collectTransformedMeshes(root);
+/**
+ * Bambu Studio lays plates out in a grid one bed width plus a fifth apart;
+ * plates are filled left to right, ⌈√count⌉ to a row.
+ */
+const plateOrigin = (i: number, count: number, bed: [number, number]): [number, number] => {
+  const cols = Math.ceil(Math.sqrt(count));
+  return [(i % cols) * bed[0] * 1.2, -Math.floor(i / cols) * bed[1] * 1.2];
+};
 
-  if (entries.length === 0) {
-    throw new Error("No visible meshes found to export.");
+/**
+ * A Bambu Studio project: the model on plate 1, each extra object (the frame)
+ * on the next plate, set up for `printerId` with one filament per colour.
+ */
+export async function exportTo3MF(
+  root: THREE.Object3D,
+  opts: { printerId?: string; profile?: BambuProfile; extra?: ExtraPlate[]; frameOnly?: ExtraPlate } = {}
+): Promise<Blob> {
+  const profile = opts.profile ?? (await loadBambuProfile(opts.printerId ?? "a1"));
+  const bed = profileBed(profile);
+  const plates: PlateObject[] = [];
+  // frameOnly: a file holding just that object, on plate 1.
+  if (!opts.frameOnly) {
+    const entries = collectTransformedMeshes(root, [bed[0] / 2, bed[1] / 2]);
+    if (entries.length === 0) {
+      throw new Error("No visible meshes found to export.");
+    }
+    plates.push({ name: "FrameCity Model", entries, origin: [0, 0] });
   }
 
-  const { modelXML, objectList } = buildModelXML(entries);
-  const modelSettingsXML = buildModelSettingsXML(objectList);
+  const extra = opts.frameOnly ? [opts.frameOnly] : opts.extra ?? [];
+  const first = plates.length;
+  extra.forEach((x, i) => {
+    const [ox, oy] = plateOrigin(first + i, first + extra.length, bed);
+    const entries = [x, ...(x.parts ?? [])].map((part) => {
+      const g = part.geometry.clone().translate(ox + bed[0] / 2, oy + bed[1] / 2, 0);
+      const welded = cleanAndWeldGeometry(g, false, 1e-3);
+      if (welded !== g) g.dispose();
+      return { geometry: welded, color: part.color, name: part.name };
+    });
+    plates.push({ name: x.name, entries, origin: [ox, oy], opening: x.opening });
+  });
 
+  plates.forEach((p) => p.entries.forEach((e) => e.geometry.computeBoundingBox()));
+  // Slide objects out of the printer's no-print corner when the bed has room.
+  const exclude = excludeBox(profile.config);
+  if (exclude) plates.forEach((p) => clearExclusion(p, bed, exclude));
+  const { modelXML, settingsXML, projectJSON } = buildBambuProject(plates, profile, bed);
   const zipData = zipSync({
     "[Content_Types].xml": strToU8(CONTENT_TYPES_XML),
     "_rels/.rels": strToU8(RELS_XML),
-    "3D/model.model": strToU8(modelXML),
-    "Metadata/model_settings.config": strToU8(modelSettingsXML),
-    "Metadata/slice_info.config": strToU8(SLICE_INFO_XML),
+    "3D/3dmodel.model": strToU8(modelXML),
+    "Metadata/model_settings.config": strToU8(settingsXML),
+    "Metadata/project_settings.config": strToU8(projectJSON),
   });
 
-  entries.forEach((e) => e.geometry.dispose());
+  plates.forEach((p) => p.entries.forEach((e) => e.geometry.dispose()));
 
   return new Blob([zipData], {
     type: "application/vnd.ms-package.3dmanufacturing-3dmodel+xml",
   });
 }
-
-

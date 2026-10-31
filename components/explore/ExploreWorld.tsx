@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { AnimatePresence, motion } from "framer-motion";
@@ -16,7 +16,9 @@ import { bounds, formatMeters, shapePolygon, type FrameShape } from "@/lib/explo
 import { fetchMapData, type OsmData } from "@/lib/explore/osm";
 import { loadHeights, shapeTerrain, type HeightSampler } from "@/lib/explore/elevation";
 import { TerrainModePicker, type TerrainChoice } from "./TerrainModePicker";
-import { buildExploreModel, PRINT_MM, summarize, type ExploreLayer, type LayerSummary } from "@/lib/explore/buildModel";
+import { TreePicker } from "./TreePicker";
+import { DEFAULT_TREE, loadTree, type TreeModelId, type TreeTemplate } from "@/lib/explore/trees";
+import { buildExploreModel, PRINT_MM, summarize, TREE_PRINT_MM, type ExploreLayer, type LayerSummary } from "@/lib/explore/buildModel";
 
 const MapPicker = dynamic(() => import("./MapPicker").then((m) => m.MapPicker), {
   ssr: false,
@@ -34,7 +36,6 @@ type Scan = {
   data: OsmData;
   heights: HeightSampler;
   half: number; // metres the height grid covers around the centre
-  layers: LayerSummary[];
 };
 
 
@@ -72,9 +73,28 @@ export function ExploreWorld({ user, hasAccess }: { user: NavUser | null; hasAcc
   const [terrain, setTerrain] = useState<TerrainChoice>({ mode: "smooth" });
   const [rebuilding, setRebuilding] = useState(false);
   const [files, setFiles] = useState<ModelFile[] | null>(null);
+  const [treeId, setTreeId] = useState<TreeModelId>(DEFAULT_TREE);
+  const [tree, setTree] = useState<TreeTemplate | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const buildId = useRef(0);
   const rebuildTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // The tree model sets how big trees print and how many fit, so layer
+  // counts follow the chosen model once it has loaded.
+  useEffect(() => {
+    let alive = true;
+    loadTree(treeId)
+      .then((t) => alive && setTree(t))
+      .catch((err) => console.error(err));
+    return () => {
+      alive = false;
+    };
+  }, [treeId]);
+
+  const layers = useMemo(
+    () => (scan ? summarize(scan.data, scan.shape, scan.heights, tree?.id === treeId ? tree : undefined) : []),
+    [scan, tree, treeId]
+  );
 
   const patchShape = useCallback((patch: Partial<FrameShape>) => setShape((s) => ({ ...s, ...patch })), []);
 
@@ -101,7 +121,7 @@ export function ExploreWorld({ user, hasAccess }: { user: NavUser | null; hasAcc
       ]);
       if (ctrl.signal.aborted) return;
       if (name) setPlaceName(name);
-      setScan({ shape: snapshot, data, heights, half, layers: summarize(data, snapshot, heights) });
+      setScan({ shape: snapshot, data, heights, half });
       setPhase("customize");
     } catch (err) {
       if (ctrl.signal.aborted) return;
@@ -111,9 +131,11 @@ export function ExploreWorld({ user, hasAccess }: { user: NavUser | null; hasAcc
     }
   }
 
-  function build(s: Scan, t: TerrainChoice, onProgress?: (label: string) => void) {
+  async function build(s: Scan, t: TerrainChoice, onProgress?: (label: string) => void) {
     const ground = shapeTerrain(s.heights, t.mode, s.half, s.shape.size / PRINT_MM);
-    return buildExploreModel(s.shape, s.data, ground, { relief: relief / 100 }, onProgress);
+    // A tree model that can't be fetched falls back to the built-in cone tree.
+    const model = await loadTree(treeId).catch(() => undefined);
+    return buildExploreModel(s.shape, s.data, ground, { relief: relief / 100, tree: model }, onProgress);
   }
 
   async function generate() {
@@ -159,7 +181,7 @@ export function ExploreWorld({ user, hasAccess }: { user: NavUser | null; hasAcc
 
   if (phase === "studio" && files && scan) {
     const name = placeName || "Custom place";
-    const hasWater = scan.layers.some((l) => l.key === "water");
+    const hasWater = layers.some((l) => l.key === "water");
     return (
       <StudioConfigurator
         type="explore"
@@ -175,7 +197,7 @@ export function ExploreWorld({ user, hasAccess }: { user: NavUser | null; hasAcc
         customFiles={files}
         initialControls={{
           enableColors: true,
-          layerColors: Object.fromEntries(scan.layers.map((l) => [l.key, colors[l.key]])),
+          layerColors: Object.fromEntries(layers.map((l) => [l.key, colors[l.key]])),
           enableWater: hasWater,
           water: 100,
         }}
@@ -279,6 +301,9 @@ export function ExploreWorld({ user, hasAccess }: { user: NavUser | null; hasAcc
           {phase === "customize" && scan && (
             <CustomizePanel
               scan={scan}
+              layers={layers}
+              treeId={treeId}
+              onTree={setTreeId}
               placeName={placeName}
               colors={colors}
               onColor={(k, hex) => setColors((c) => ({ ...c, [k]: hex }))}
@@ -322,6 +347,9 @@ function StepPills({ phase }: { phase: Phase }) {
 
 function CustomizePanel({
   scan,
+  layers,
+  treeId,
+  onTree,
   placeName,
   colors,
   onColor,
@@ -335,6 +363,9 @@ function CustomizePanel({
   onReopen,
 }: {
   scan: Scan;
+  layers: LayerSummary[];
+  treeId: TreeModelId;
+  onTree: (id: TreeModelId) => void;
   placeName: string | null;
   colors: Record<string, string>;
   onColor: (key: ExploreLayer, hex: string) => void;
@@ -348,7 +379,8 @@ function CustomizePanel({
   onReopen: () => void;
 }) {
   const [open, setOpen] = useState<ExploreLayer | null>(null);
-  const onlyTerrain = scan.layers.length === 1;
+  const onlyTerrain = layers.length === 1;
+  const trees = layers.find((l) => l.key === "trees");
 
   return (
     <motion.aside
@@ -365,12 +397,12 @@ function CustomizePanel({
         </div>
         <p className="m-0 font-mono text-[10px] uppercase leading-[1.6] tracking-[0.14em] text-cream/45">
           {placeName ? `${placeName} · ` : ""}
-          {formatMeters(scan.shape.size)} {scan.shape.kind} · {scan.layers.length} layers found
+          {formatMeters(scan.shape.size)} {scan.shape.kind} · {layers.length} layers found
         </p>
       </div>
 
       <div className="flex flex-1 flex-col gap-2 overflow-y-auto p-4">
-        {scan.layers.map((l) => {
+        {layers.map((l) => {
           const hex = colors[l.key] || "#FFFFFF";
           const isOpen = open === l.key;
           return (
@@ -429,6 +461,16 @@ function CustomizePanel({
             </div>
           );
         })}
+
+        {trees && (
+          <div className="mt-1 rounded-xl border border-cream/[0.12] bg-cream/[0.03] p-3">
+            <div className="mb-1.5 text-[13px]">Tree style</div>
+            <p className="m-0 mb-2.5 font-mono text-[9.5px] uppercase leading-[1.6] tracking-[0.14em] text-cream/40">
+              Planted on mapped trees, woods, parks and lawns · printed {TREE_PRINT_MM} mm tall
+            </p>
+            <TreePicker value={treeId} onChange={onTree} color={colors.trees || "#3f7d3a"} />
+          </div>
+        )}
 
         {scan.data.lod2 && (
           <p className="m-0 rounded-xl border border-[var(--accent)]/30 bg-[var(--accent)]/[0.06] p-3 font-mono text-[10px] leading-[1.6] text-cream/60">

@@ -11,6 +11,8 @@ import {
   CITY_DEFAULTS,
   FILAMENT_LINES,
   DEFAULT_LAYER_COLORS,
+  fitScale,
+  usableBed,
   type CityControls,
 } from "@/lib/studio";
 import type { NavUser } from "@/lib/user";
@@ -22,9 +24,12 @@ import { TempAccessModal } from "@/components/TempAccessModal";
 import { BackerCrowdfundModal } from "@/components/BackerCrowdfundModal";
 import { ConnectStudioModal } from "@/components/ConnectStudioModal";
 import type { GizmoMode } from "./StudioScene";
-import { exportTo3MF, collectTransformedMeshes } from "@/lib/3mfExporter";
+import { exportTo3MF, collectTransformedMeshes, type ExtraPlate } from "@/lib/3mfExporter";
 import Scrubber from "../ui/Scrubber";
-import { Box, Building2, Palette, PrinterIcon, Road, Shrub, SquareDimensions, TreePine } from "lucide-react";
+import { Building2, Frame, Palette, Road, Ruler, Shrub, SquareDimensions, TreePine } from "lucide-react";
+import { SizePanel, BED_MARGIN, type Dims, type SizeAxis } from "./SizePanel";
+import { FramePanel } from "./FramePanel";
+import { buildFrame, frameSTL, seatHeight, FRAME_DEFAULTS, type FrameBuild, type FrameOptions } from "@/lib/frame";
 import SegmentedToggle from "../ui/Switch";
 import { TerrainModePicker, type TerrainChoice } from "@/components/explore/TerrainModePicker";
 
@@ -44,13 +49,21 @@ const StudioScene = dynamic(() => import("./StudioScene"), {
 });
 
 type ExportFormat = "3mf" | "stl";
-type Triple = [number, number, number];
-type Transform = { pos: Triple; rot: Triple; scl: Triple };
 
-const INITIAL_TF: Transform = { pos: [0, 100, 0], rot: [0, 0, 0], scl: [100, 100, 100] };
-const RAD = 180 / Math.PI;
-
-const round1 = (n: number) => Math.round(n * 10) / 10;
+/** World-space bounds of everything visible under `root` — what will print. */
+function measureVisible(root: THREE.Object3D, refresh: boolean): THREE.Box3 {
+  root.updateWorldMatrix(true, true);
+  const box = new THREE.Box3();
+  const tmp = new THREE.Box3();
+  root.traverseVisible((o) => {
+    const m = o as THREE.Mesh;
+    if (!m.isMesh || !m.geometry) return;
+    // Layer controls move vertices in place, so their bounds go stale.
+    if (refresh || !m.geometry.boundingBox) m.geometry.computeBoundingBox();
+    box.union(tmp.copy(m.geometry.boundingBox!).applyMatrix4(m.matrixWorld));
+  });
+  return box;
+}
 
 export function StudioConfigurator({
   type = "city",
@@ -86,8 +99,20 @@ export function StudioConfigurator({
   const [modelFiles, setModelFiles] = useState<ModelFile[]>([]);
   const [modelLoading, setModelLoading] = useState(true);
   const [printerId, setPrinterId] = useState("a1");
-  const [mode, setMode] = useState<GizmoMode>("translate");
-  const [tf, setTf] = useState<Transform>(INITIAL_TF);
+  const [mode, setMode] = useState<GizmoMode | null>(null);
+  const [dims, setDims] = useState<Dims | null>(null);
+  const [lockRatio, setLockRatio] = useState(true);
+  const [moved, setMoved] = useState(false);
+  // Where the model sits in the scene, so the frame can wrap around it.
+  const [seat, setSeat] = useState<{ x: number; z: number; y: number } | null>(null);
+
+  // Picture frame for the model
+  const [frameOn, setFrameOn] = useState(false);
+  const [frameOpts, setFrameOpts] = useState<FrameOptions>(FRAME_DEFAULTS);
+  const [frame, setFrame] = useState<FrameBuild | null>(null);
+  const [frameBusy, setFrameBusy] = useState(false);
+  const [frameDownload, setFrameDownload] = useState<"stl" | "3mf" | null>(null);
+  const patchFrame = useCallback((p: Partial<FrameOptions>) => setFrameOpts((o) => ({ ...o, ...p })), []);
 
   // Download quota & export states
   const [exportingAs, setExportingAs] = useState<ExportFormat | null>(null);
@@ -99,7 +124,7 @@ export function StudioConfigurator({
   const [revitInfoModal, setRevitInfoModal] = useState(false);
 
   // Active dashboard tab state
-  type StudioTab = "printer" | "transform" | "city" | "revit" | "colors";
+  type StudioTab = "size" | "frame" | "city" | "revit" | "colors";
   const [activeTab, setActiveTab] = useState<StudioTab | null>("city");
 
   // Live "Manipulate city" controls
@@ -210,32 +235,188 @@ export function StudioConfigurator({
   }, [city.slug, location.slug, type, patronUsername, customFiles]);
 
 
-  const syncFromMesh = useCallback((mesh: THREE.Object3D) => {
-    setTf({
-      pos: [mesh.position.x / MM, mesh.position.y / MM, mesh.position.z / MM],
-      rot: [mesh.rotation.x * RAD, mesh.rotation.y * RAD, mesh.rotation.z * RAD],
-      scl: [mesh.scale.x * 100, mesh.scale.y * 100, mesh.scale.z * 100],
-    });
+  /** Re-reads the printed size from the scene. */
+  const measure = useCallback((refresh = false) => {
+    const mesh = meshRef.current;
+    if (!mesh) return setDims(null);
+    const box = measureVisible(mesh, refresh);
+    if (box.isEmpty()) return setDims(null);
+    const size = box.getSize(new THREE.Vector3()).divideScalar(MM);
+    setDims({ w: size.x, d: size.z, h: size.y });
+    const c = box.getCenter(new THREE.Vector3());
+    setSeat({ x: c.x, z: c.z, y: box.min.y });
+    const atRest =
+      mesh.scale.equals(new THREE.Vector3(1, 1, 1)) &&
+      mesh.rotation.x === 0 && mesh.rotation.y === 0 && mesh.rotation.z === 0 &&
+      Math.abs(mesh.position.x) < 1e-6 && Math.abs(mesh.position.z) < 1e-6;
+    setMoved(!atRest);
   }, []);
+
+  const syncFromMesh = useCallback(() => measure(false), [measure]);
 
   const handleTarget = useCallback(
     (obj: THREE.Object3D | null) => {
       meshRef.current = obj;
-      if (obj) syncFromMesh(obj);
+      // The model's layer controls apply in an effect after mount.
+      setTimeout(() => measure(true), 60);
     },
-    [syncFromMesh]
+    [measure]
   );
 
-  function resetGroup(group: keyof Transform) {
+  // Layer sliders (heights, base frame, water) change the printed size.
+  useEffect(() => {
+    const t = setTimeout(() => measure(true), 60);
+    return () => clearTimeout(t);
+  }, [cityCtl, modelFiles, measure]);
+
+  // Rebuild the frame when its options or the model's footprint change.
+  // Rounded so a re-measure that moves nothing doesn't rebuild.
+  const tileW = dims ? Math.round(dims.w * 10) / 10 : 0;
+  const tileD = dims ? Math.round(dims.d * 10) / 10 : 0;
+  useEffect(() => {
+    if (!frameOn || !tileW || !tileD) return;
+    let cancelled = false;
+    setFrameBusy(true);
+    const t = setTimeout(async () => {
+      try {
+        const built = await buildFrame({ w: tileW, d: tileD }, frameOpts);
+        if (cancelled) return built.geometry.dispose();
+        setFrame((old) => {
+          old?.geometry.dispose();
+          return built;
+        });
+      } catch (err) {
+        console.error(err);
+      } finally {
+        if (!cancelled) setFrameBusy(false);
+      }
+    }, 250);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [frameOn, frameOpts, tileW, tileD]);
+
+  function openFrame() {
+    setFrameOn(true);
+    setActiveTab("frame");
+  }
+
+  /** Shrinks the model so the frame around it fits the printer bed. */
+  function shrinkForFrame() {
+    const mesh = meshRef.current;
+    if (!mesh || !dims) return;
+    // Scale the model so model + border fits: solve for the frame's outer size.
+    const extra = 2 * (frameOpts.border + frameOpts.clearance);
+    const [aw, ad] = usableBed(printer, dims.w + extra, dims.d + extra, BED_MARGIN);
+    const f = Math.min((aw - extra) / dims.w, (ad - extra) / dims.d);
+    if (f >= 1) return;
+    mesh.scale.multiplyScalar(f);
+    dropToBed(mesh);
+    measure(false);
+  }
+
+  /** The frame as a 3MF plate object: the body, plus the letters as a second-colour part. */
+  function framePlate(f: FrameBuild): ExtraPlate {
+    return {
+      name: "Frame",
+      geometry: f.geometry,
+      color: frameOpts.color,
+      parts: f.text ? [{ name: "Frame text", geometry: f.text, color: frameOpts.labelColor }] : [],
+      opening: frameOpts.back === "open" ? [f.size.opening.w - frameOpts.lip * 2, f.size.opening.d - frameOpts.lip * 2] : undefined,
+    };
+  }
+
+  async function downloadFrame(format: "stl" | "3mf") {
+    if (!hasAccess) {
+      setBackerCrowdfundModalOpen(true);
+      return;
+    }
+    if (!frame) return;
+    setFrameDownload(format);
+    try {
+      const blob =
+        format === "stl"
+          ? await frameSTL(frame.text ? [frame.geometry, frame.text] : [frame.geometry])
+          : await exportTo3MF(new THREE.Group(), {
+              printerId,
+              frameOnly: framePlate(frame),
+            });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `framecity-${city.slug}-${location.slug}-frame.${format}`;
+      a.click();
+      URL.revokeObjectURL(url);
+      setDownloadNotice(`Frame ${format.toUpperCase()} ready — ${Math.round(frame.size.w)} × ${Math.round(frame.size.d)} mm.`);
+    } catch (err) {
+      console.error(err);
+      alert("Couldn't export the frame.");
+    } finally {
+      setFrameDownload(null);
+    }
+  }
+
+  /** Sits the model on the bed: lowest point at zero height. */
+  function dropToBed(mesh: THREE.Object3D) {
+    const box = measureVisible(mesh, false);
+    if (!box.isEmpty()) mesh.position.y -= box.min.y;
+  }
+
+  function setSize(axis: SizeAxis, mm: number) {
+    const mesh = meshRef.current;
+    if (!mesh || !dims || !dims[axis]) return;
+    const f = mm / dims[axis];
+    if (lockRatio) mesh.scale.multiplyScalar(f);
+    else if (axis === "h") mesh.scale.y *= f;
+    else {
+      // Width/depth are world X/Z; after a quarter turn they map to the other local axis.
+      const swapped = Math.abs(Math.sin(mesh.rotation.y)) > 0.7;
+      const local = (axis === "w") !== swapped ? "x" : "z";
+      mesh.scale[local] *= f;
+    }
+    dropToBed(mesh);
+    measure(false);
+  }
+
+  function fitToBed() {
+    const mesh = meshRef.current;
+    if (!mesh || !dims) return;
+    const f = fitScale(printer, dims.w, dims.d, dims.h, BED_MARGIN);
+    mesh.scale.multiplyScalar(f);
+    mesh.position.x = 0;
+    mesh.position.z = 0;
+    dropToBed(mesh);
+    measure(false);
+  }
+
+  function centreOnBed() {
     const mesh = meshRef.current;
     if (!mesh) return;
-    if (group === "pos") mesh.position.set(0, mesh.scale.y, 0);
-    if (group === "rot") mesh.rotation.set(0, 0, 0);
-    if (group === "scl") {
-      mesh.scale.set(1, 1, 1);
-      mesh.position.y = 1;
-    }
-    syncFromMesh(mesh);
+    const box = measureVisible(mesh, false);
+    const c = box.getCenter(new THREE.Vector3());
+    mesh.position.x -= c.x;
+    mesh.position.z -= c.z;
+    dropToBed(mesh);
+    measure(false);
+  }
+
+  function turn90() {
+    const mesh = meshRef.current;
+    if (!mesh) return;
+    mesh.rotation.y = (mesh.rotation.y + Math.PI / 2) % (Math.PI * 2);
+    if (Math.abs(mesh.rotation.y) < 1e-6) mesh.rotation.y = 0;
+    centreOnBed();
+  }
+
+  function resetTransform() {
+    const mesh = meshRef.current;
+    if (!mesh) return;
+    mesh.scale.set(1, 1, 1);
+    mesh.rotation.set(0, 0, 0);
+    mesh.position.set(0, mesh.position.y, 0);
+    dropToBed(mesh);
+    measure(false);
   }
 
   // Either format is available at any point. Colours are a property of the
@@ -274,7 +455,11 @@ export function StudioConfigurator({
 
     try {
       if (format === "3mf") {
-        const blob = exportTo3MF(mesh);
+        const withFrame = frameOn && frame;
+        const blob = await exportTo3MF(mesh, {
+          printerId,
+          extra: withFrame ? [framePlate(frame)] : [],
+        });
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
@@ -282,9 +467,11 @@ export function StudioConfigurator({
         a.click();
         URL.revokeObjectURL(url);
 
-        const colorNote = cityCtl.enableColors
-          ? " — colors included."
-          : " — single color. Turn on Filament Colors for a multi-color file.";
+        const colorNote =
+          (cityCtl.enableColors
+            ? " — colors included"
+            : " — single color. Turn on Filament Colors for a multi-color file") +
+          (withFrame ? ". Frame is on plate 2." : ".");
         if (res.tier === "explorer" && res.remaining !== undefined) {
           setDownloadNotice(
             `Download recorded! ${res.remaining} downloads remaining this month. (3MF)`
@@ -588,6 +775,18 @@ export function StudioConfigurator({
             </button>
           )}
           <ThemeToggle />
+          <button
+            onClick={openFrame}
+            className={`hidden items-center gap-1.5 rounded-full border px-3.5 py-[9px] font-mono text-[11px] font-bold uppercase tracking-[0.12em] transition-colors duration-200 sm:flex ${
+              frameOn
+                ? "border-[var(--accent)]/60 text-[var(--accent)]"
+                : "border-cream/25 text-cream/70 hover:border-cream/45 hover:text-cream"
+            }`}
+            title={frameOn ? "Edit the frame" : "Design a frame for this model"}
+          >
+            <Frame size={13} />
+            {frameOn ? "Frame on" : "Add frame"}
+          </button>
           <div className="flex items-center gap-1.5">
             <button
               onClick={() => downloadModel("3mf")}
@@ -642,10 +841,21 @@ export function StudioConfigurator({
             cityControls={cityCtl}
             onTarget={handleTarget}
             onTransform={syncFromMesh}
+            frame={
+              frameOn && frame && seat
+                ? {
+                    geometry: frame.geometry,
+                    color: frameOpts.color,
+                    // The model's base rests on the frame's ledge / back panel.
+                    position: [seat.x, seat.y - seatHeight(frameOpts) * MM, seat.z],
+                    text: frame.text ? { geometry: frame.text, color: frameOpts.labelColor } : null,
+                  }
+                : null
+            }
           />
 
           <div className="pointer-events-none absolute bottom-4 left-1/2 hidden -translate-x-1/2 rounded-full border border-cream/[0.12] bg-deep/60 px-[13px] py-[7px] font-mono text-[10px] uppercase tracking-[0.16em] text-cream/45 backdrop-blur-[6px] md:block">
-            Drag the gizmo · scroll to zoom · right-drag to pan
+            {mode ? "Drag the gizmo · " : "Drag to orbit · "}scroll to zoom · right-drag to pan
           </div>
         </div>
 
@@ -659,8 +869,8 @@ export function StudioConfigurator({
               
               { id: "revit" as const, label: "Revit Base Frame", icon: <SquareDimensions  size={18} /> },
               ...(type !== "building" ? [{ id: "colors" as const, label: "Filament Colors", icon: <Palette  size={18} /> }] : []),
-              { id: "printer" as const, label: "Printer Setup", icon: <PrinterIcon size={18} />},
-              { id: "transform" as const, label: "Transform", icon: <Box size={18} /> },
+              { id: "size" as const, label: "Size & Printer", icon: <Ruler size={18} /> },
+              { id: "frame" as const, label: "Frame", icon: <Frame size={18} /> },
             ].map((item) => {
               const active = activeTab === item.id;
               return (
@@ -690,7 +900,7 @@ export function StudioConfigurator({
             <button
               type="button"
               title={activeTab ? "Collapse Panel" : "Expand Panel"}
-              onClick={() => setActiveTab(activeTab ? null : "printer")}
+              onClick={() => setActiveTab(activeTab ? null : "size")}
               className="pointer-events-auto hidden lg:flex h-9 w-9 items-center justify-center rounded-xl text-cream/40 transition-colors hover:bg-cream/10 hover:text-cream"
             >
               <motion.span
@@ -717,15 +927,15 @@ export function StudioConfigurator({
                 <div className="mb-4 flex items-center justify-between border-b border-cream/[0.09] pb-3">
                   <div className="flex items-center gap-2">
                     <span className="font-mono text-[10px] font-bold text-[var(--accent)] uppercase tracking-wider">
-                      {activeTab === "printer" && "04"}
-                      {activeTab === "transform" && "05"}
+                      {activeTab === "size" && "04"}
+                      {activeTab === "frame" && "05"}
                       {activeTab === "city" && "01"}
                       {activeTab === "revit" && "02"}
                       {activeTab === "colors" && "03"}
                     </span>
                     <h3 className="m-0 font-display text-[17px] font-medium capitalize text-cream">
-                      {activeTab === "printer" && "Printer Setup"}
-                      {activeTab === "transform" && "Transform"}
+                      {activeTab === "size" && "Size & Printer"}
+                      {activeTab === "frame" && "Frame"}
                       {activeTab === "city" && "Manipulate City"}
                       {activeTab === "revit" && "Revit Base Frame"}
                       {activeTab === "colors" && "Filament Colors"}
@@ -741,87 +951,39 @@ export function StudioConfigurator({
                   </button>
                 </div>
 
-                {/* Tab 1: Printer */}
-                {activeTab === "printer" && (
-                  <div className="flex flex-col gap-4">
-                    <div className="font-mono text-[10px] uppercase tracking-[0.16em] text-cream/45">
-                      Select 3D Printer Model
-                    </div>
-                    <PrinterSelect value={printerId} onChange={setPrinterId} />
-                    <div className="rounded-xl border border-cream/[0.12] bg-cream/[0.03] p-3.5 flex flex-col gap-2">
-                      <div className="flex justify-between text-[12px]">
-                        <span className="text-cream/55 font-mono text-[11px]">Bed Dimensions</span>
-                        <span className="font-mono font-bold text-cream">
-                          {printer.bed[0]} × {printer.bed[1]} × {printer.bed[2]} mm
-                        </span>
-                      </div>
-                      <div className="flex justify-between text-[12px]">
-                        <span className="text-cream/55 font-mono text-[11px]">Build Volume</span>
-                        <span className="font-mono text-cream/80">
-                          {((printer.bed[0] * printer.bed[1] * printer.bed[2]) / 1000000).toFixed(2)} L
-                        </span>
-                      </div>
-                    </div>
-                  </div>
+                {activeTab === "frame" && (
+                  <FramePanel
+                    enabled={frameOn}
+                    onEnabled={setFrameOn}
+                    opts={frameOpts}
+                    onOpts={patchFrame}
+                    size={frame?.size ?? null}
+                    busy={frameBusy}
+                    printer={printer}
+                    defaultLabel={location.name}
+                    onShrinkToFit={shrinkForFrame}
+                    onDownload={downloadFrame}
+                    downloading={frameDownload}
+                  />
                 )}
 
-                {/* Tab 2: Transform */}
-                {activeTab === "transform" && (
-                  <div className="flex flex-col gap-4">
-                    <div className="grid grid-cols-3 gap-1 rounded-full border border-cream/[0.14] p-1">
-                      {(
-                        [
-                          ["translate", "Move", MoveIcon],
-                          ["rotate", "Rotate", RotateIcon],
-                          ["scale", "Scale", ScaleIcon],
-                        ] as const
-                      ).map(([m, label, Icon]) => {
-                        const on = mode === m;
-                        return (
-                          <button
-                            key={m}
-                            type="button"
-                            onClick={() => setMode(m)}
-                            className={`flex items-center justify-center gap-1.5 rounded-full py-[7px] text-[11.5px] transition-colors duration-200 ${
-                              on ? "bg-cream text-[var(--color-base)] font-medium" : "text-cream/60 hover:text-cream"
-                            }`}
-                          >
-                            <Icon />
-                            {label}
-                          </button>
-                        );
-                      })}
-                    </div>
-
-                    <ValueGroup
-                      label="Position"
-                      unit="mm"
-                      active={mode === "translate"}
-                      values={tf.pos}
-                      onActivate={() => setMode("translate")}
-                      onReset={() => resetGroup("pos")}
-                    />
-                    <ValueGroup
-                      label="Rotation"
-                      unit="°"
-                      active={mode === "rotate"}
-                      values={tf.rot}
-                      onActivate={() => setMode("rotate")}
-                      onReset={() => resetGroup("rot")}
-                    />
-                    <ValueGroup
-                      label="Scale"
-                      unit="%"
-                      active={mode === "scale"}
-                      values={tf.scl}
-                      onActivate={() => setMode("scale")}
-                      onReset={() => resetGroup("scl")}
-                    />
-
-                    <p className="m-0 font-mono text-[9.5px] leading-[1.7] uppercase tracking-[0.14em] text-cream/30">
-                      Adjust with the gizmo in the 3D viewport
-                    </p>
-                  </div>
+                {/* Size & printer */}
+                {activeTab === "size" && (
+                  <SizePanel
+                    printer={printer}
+                    printerSelect={<PrinterSelect value={printerId} onChange={setPrinterId} />}
+                    dims={dims}
+                    locked={lockRatio}
+                    onLocked={setLockRatio}
+                    onSize={setSize}
+                    onFit={fitToBed}
+                    onCentre={centreOnBed}
+                    onRotate={turn90}
+                    onReset={resetTransform}
+                    canReset={moved}
+                    mode={mode}
+                    onMode={setMode}
+                  />
                 )}
 
                 {/* Tab 3: Manipulate City */}
@@ -1353,7 +1515,7 @@ function SectionLabel({
   );
 }
 
-/** A Manipulate City slider with the same reset affordance the Transform tab uses. */
+/** A Manipulate City slider with a reset button. */
 function ResettableScrubber({
   label,
   value,
@@ -1395,98 +1557,6 @@ function ResettableScrubber({
         ↺
       </button>
     </div>
-  );
-}
-
-function ValueGroup({
-  label,
-  unit,
-  values,
-  active,
-  onActivate,
-  onReset,
-}: {
-  label: string;
-  unit: string;
-  values: [number, number, number];
-  active: boolean;
-  onActivate: () => void;
-  onReset: () => void;
-}) {
-  return (
-    <div className="mb-4">
-      <div className="mb-2 flex items-center justify-between">
-        <button
-          onClick={onActivate}
-          className="font-mono text-[10px] font-bold uppercase tracking-[0.2em] transition-colors"
-          style={{ color: active ? "var(--accent)" : "rgba(var(--ink-rgb),0.45)" }}
-        >
-          {label} · {unit}
-        </button>
-        <button
-          onClick={onReset}
-          title={`Reset ${label.toLowerCase()}`}
-          className="text-[12px] text-cream/40 transition-colors hover:text-cream"
-        >
-          ↺
-        </button>
-      </div>
-      <div className="grid grid-cols-3 gap-2">
-        {(["X", "Y", "Z"] as const).map((axis, i) => (
-          <div
-            key={axis}
-            className="flex items-center gap-1.5 rounded-[8px] border border-cream/[0.14] px-2.5 py-[7px]"
-          >
-            <span className="font-mono text-[9px] text-cream/35">{axis}</span>
-            <input
-              readOnly
-              value={round1(values[i])}
-              title="Adjust with the gizmo"
-              className="w-full bg-transparent font-mono text-[12px] text-cream/85 outline-none"
-            />
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function MoveIcon() {
-  return (
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden>
-      <path
-        d="M12 2v20M2 12h20M12 2l-3 3M12 2l3 3M12 22l-3-3M12 22l3-3M2 12l3-3M2 12l3 3M22 12l-3-3M22 12l-3 3"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
-function RotateIcon() {
-  return (
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden>
-      <path
-        d="M20 12a8 8 0 1 1-2.34-5.66M20 3v4h-4"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
-function ScaleIcon() {
-  return (
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden>
-      <path
-        d="M4 20h7v-2H7.41L20 5.41V10h2V3h-7v2h4.59L7 17.59V13H5v7h-1z"
-        fill="currentColor"
-      />
-    </svg>
   );
 }
 

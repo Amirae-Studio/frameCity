@@ -36,6 +36,7 @@ const ROAD_WIDTH: Record<string, number> = {
 };
 const WATERWAY_WIDTH: Record<string, number> = { river: 18, canal: 12, stream: 3, drain: 2, ditch: 1.5 };
 const GRASS_LANDUSE = new Set(["cemetery", "pitch", "playground", "garden", "grass", "stadium"]);
+const OPEN_LANDUSE = new Set(["pitch", "playground", "stadium"]);
 
 let templatePromise: Promise<string> | null = null;
 function tileTemplate(): Promise<string> {
@@ -171,8 +172,10 @@ function readTile(tile: VectorTile, tx: number, ty: number, shape: FrameShape, c
   });
 
   each("landuse", (f, sq, L) => {
-    if (!GRASS_LANDUSE.has(String(f.properties.class || ""))) return;
-    data.grass.push(...areas(f, sq, L));
+    const cls = String(f.properties.class || "");
+    if (!GRASS_LANDUSE.has(cls)) return;
+    const open = OPEN_LANDUSE.has(cls);
+    for (const a of areas(f, sq, L)) data.grass.push(open ? { ...a, open } : a);
   });
 
   each("water", (f, sq, L) => {

@@ -9,6 +9,7 @@
  *   R2_BUCKET_GALLERY   — bucket name for gallery images  (default: "gallery")
  *   R2_BUCKET_CITY_MODELS — bucket name for city GLBs     (default: "city-models")
  *   R2_BUCKET_BUILDINGS — bucket name for building GLBs   (default: "buildings")
+ *   R2_BUCKET_UTILS     — shared helper models, e.g. tree STLs (default: "utils")
  */
 
 import {
@@ -25,6 +26,7 @@ export const R2_BUCKET = {
   cityModels: process.env.R2_BUCKET_CITY_MODELS ?? "city-models",
   buildings: process.env.R2_BUCKET_BUILDINGS ?? "buildings",
   patron: process.env.R2_BUCKET_PATRON ?? "patron",
+  utils: process.env.R2_BUCKET_UTILS ?? "utils",
 } as const;
 
 // -- S3Client (singleton per process) -----------------------------------------

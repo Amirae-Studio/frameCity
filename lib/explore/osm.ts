@@ -22,7 +22,12 @@ import { intersection, type Pair } from "polygon-clipping";
 
 export { orient };
 
-export type Area = { outer: Vec2[]; holes: Vec2[][] };
+export type Area = {
+  outer: Vec2[];
+  holes: Vec2[][];
+  /** Grass kept clear of scattered trees: sports pitches, playgrounds, golf. */
+  open?: boolean;
+};
 
 export type RoofShape = "flat" | "skillion" | "gabled" | "hipped" | "pyramidal" | "dome" | "onion";
 
@@ -81,6 +86,7 @@ type OsmElement = {
 const GRASS_LANDUSE = /^(grass|meadow|village_green|recreation_ground|forest|orchard|vineyard|cemetery|allotments|greenfield)$/;
 const GRASS_LEISURE = /^(park|garden|golf_course|pitch|playground|dog_park|nature_reserve)$/;
 const GRASS_NATURAL = /^(wood|grassland|scrub|heath|wetland)$/;
+const OPEN_LEISURE = /^(pitch|playground|golf_course|dog_park|track|stadium)$/;
 const TREE_AREA = (t: Record<string, string>) =>
   t.landuse === "forest" || t.natural === "wood" || t.landuse === "orchard";
 const WATER_AREA = (t: Record<string, string>) =>
@@ -573,6 +579,7 @@ function parseElements(elements: OsmElement[], origin: LngLat, clip: Vec2[]): Os
       for (const c of clipArea(a, clip)) {
         if (isWater) data.water.push(c);
         else {
+          if (OPEN_LEISURE.test(t.leisure || "")) c.open = true;
           data.grass.push(c);
           if (TREE_AREA(t)) data.treeAreas.push(c);
         }

@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 
 // Only the model buckets are served here — never let the URL pick an
 // arbitrary bucket the R2 token happens to have access to.
-const ALLOWED_BUCKETS = new Set<string>([R2_BUCKET.cityModels, R2_BUCKET.buildings, R2_BUCKET.patron]);
+const ALLOWED_BUCKETS = new Set<string>([R2_BUCKET.cityModels, R2_BUCKET.buildings, R2_BUCKET.patron, R2_BUCKET.utils]);
 const MODEL_EXTENSIONS = /\.(glb|stl)$/i;
 
 export async function GET(

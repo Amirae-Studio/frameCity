@@ -132,7 +132,7 @@ export function PatronConfigurator({
 
     try {
       if (format === "3mf") {
-        const blob = exportTo3MF(mesh);
+        const blob = await exportTo3MF(mesh, { printerId });
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
