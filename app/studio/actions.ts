@@ -283,6 +283,16 @@ function normalizeRewardTier(rawTier: string | null | undefined): BackerTier {
 }
 
 /**
+ * A MakerWorld username as typed → as stored: trimmed, without a leading @.
+ * Only characters that would break the PostgREST `or=(…)` filter syntax are
+ * dropped — underscores are real username characters (`user_3322607972`)
+ * and are not wildcards in an `eq` match, so they stay.
+ */
+function cleanMakerWorldName(raw: string): string {
+  return raw.trim().replace(/^@/, "").replace(/[%,()"\\]/g, "");
+}
+
+/**
  * Verify if a MakerWorld username exists in the Supabase `customers` table
  * and retrieve their normalized tier from the `reward_tier` or `tier` column.
  */
@@ -295,8 +305,7 @@ export async function verifyMakerWorldUsername(
   rawTier?: string;
   error?: string;
 }> {
-  // Sanitize: remove leading @ and SQL/PostgREST wildcard characters (% and _)
-  const cleanName = username.trim().replace(/^@/, "").replace(/[%_,]/g, "");
+  const cleanName = cleanMakerWorldName(username);
 
   if (!cleanName) {
     return { ok: false, error: "Please enter your MakerWorld username." };
@@ -364,7 +373,7 @@ export async function redeemBackerAccessCode(
   rawUsername: string
 ): Promise<{ ok: boolean; tier?: BackerTier; error?: string }> {
   const code = rawCode.trim().toUpperCase();
-  const username = rawUsername.trim().replace(/^@/, "").replace(/[%_,]/g, "");
+  const username = cleanMakerWorldName(rawUsername);
 
   if (!code) {
     return { ok: false, error: "Please enter an access code." };
@@ -545,7 +554,7 @@ export async function upgradeUserTier(
     .single();
 
   const effectiveUsername =
-    (optionalUsername || "").trim().replace(/^@/, "").replace(/[%_,]/g, "") ||
+    cleanMakerWorldName(optionalUsername || "") ||
     profile?.makerworld_name?.trim().replace(/^@/, "");
 
   // 3. Query access_codes table in database using service role
